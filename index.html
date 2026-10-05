@@ -1,0 +1,3149 @@
+<!DOCTYPE html>
+<html lang="id" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MRI Project Planner - Enterprise Multi-Project, EVM & Realtime BAST Engine</title>
+
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#eef2ff',
+                            100: '#e0e7ff',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            700: '#4338ca',
+                            900: '#312e81',
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'Consolas', 'monospace']
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- SheetJS (xlsx) for Import/Export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- Chart.js for Executive Analytics & S-Curve -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- html2canvas & jsPDF for Crisp A4 PDF/PNG Exports -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <!-- FontAwesome 6 Pro Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
+    <style>
+        * {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        }
+        .font-mono {
+            font-family: 'JetBrains Mono', monospace !important;
+        }
+        body {
+            background-color: #f1f5f9;
+            color: #0f172a;
+            -webkit-tap-highlight-color: transparent;
+            overflow-x: hidden;
+            font-size: 13px;
+            line-height: 1.4;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #e2e8f0;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #94a3b8;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+
+        .gantt-grid-day {
+            background-image: linear-gradient(to right, #e2e8f0 1px, transparent 1px);
+        }
+        
+        .editable-cell {
+            transition: all 0.2s ease;
+        }
+        .editable-cell:hover {
+            background-color: #fef3c7;
+            cursor: pointer;
+            outline: 1px dashed #d97706;
+        }
+
+        .glass-card {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.05);
+        }
+
+        @page {
+            size: A4 landscape;
+            margin: 10mm;
+        }
+
+        @media print {
+            body * {
+                visibility: hidden;
+            }
+            #printable-a4-area, #printable-a4-area * {
+                visibility: visible;
+            }
+            #printable-a4-area {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                max-width: 100%;
+                background: white;
+                color: black;
+                padding: 10px;
+                box-sizing: border-box;
+            }
+            .no-print {
+                display: none !important;
+            }
+        }
+    </style>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, doc, setDoc, getDocs, onSnapshot, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyB8R2TvYwZ-GRmOs-Z2SPL-jNDNFo2lgg0",
+            authDomain: "mriprojectplanner.firebaseapp.com",
+            databaseURL: "https://mriprojectplanner-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "mriprojectplanner",
+            storageBucket: "mriprojectplanner.firebasestorage.app",
+            messagingSenderId: "430792164248",
+            appId: "1:430792164248:web:8fc464307a90dacba221ed",
+            measurementId: "G-QNBYDMN1Z4"
+        };
+
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'mriprojectplanner';
+        const customAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        window.FIREBASE_QUOTA = {
+            readsCount: 0,
+            writesCount: 0,
+            maxDailyReads: 50000,
+            maxDailyWrites: 20000,
+            status: "CONNECTING"
+        };
+
+        try {
+            const app = initializeApp(firebaseConfig);
+            const db = getFirestore(app);
+            const auth = getAuth(app);
+
+            if (customAuthToken) {
+                await signInWithCustomToken(auth, customAuthToken).catch(() => signInAnonymously(auth));
+            } else {
+                await signInAnonymously(auth).catch((e) => console.debug("Auth fallback active:", e));
+            }
+
+            window.MRI_FIREBASE = { app, db, auth, collection, doc, setDoc, getDocs, onSnapshot, deleteDoc, appId };
+
+            // Realtime listener for Multi-Projects Collection
+            const projectsColRef = collection(db, 'artifacts', appId, 'public', 'data', 'mri_multi_projects_v3');
+            onSnapshot(projectsColRef, (snapshot) => {
+                window.FIREBASE_QUOTA.readsCount += snapshot.size || 1;
+                if (typeof window.updateFirebaseQuotaUI === 'function') window.updateFirebaseQuotaUI("live");
+
+                const remoteProjects = [];
+                snapshot.forEach(docSnap => {
+                    const data = docSnap.data();
+                    if (data && data.id) remoteProjects.push(data);
+                });
+
+                if (remoteProjects.length > 0) {
+                    window.ALL_PROJECTS = remoteProjects;
+                    if (!window.ALL_PROJECTS.some(p => p.id === window.CURRENT_PROJECT_ID)) {
+                        window.CURRENT_PROJECT_ID = window.ALL_PROJECTS[0].id;
+                    }
+                    if (typeof window.refreshCurrentView === 'function') window.refreshCurrentView();
+                } else if (snapshot.empty) {
+                    if (typeof window.seedInitialFirebaseData === 'function') {
+                        window.seedInitialFirebaseData();
+                    } else {
+                        window.PENDING_SEED_PROJECTS = true;
+                    }
+                }
+            }, (error) => {
+                console.debug("Firebase offline cache mode active:", error);
+                if (typeof window.updateFirebaseQuotaUI === 'function') window.updateFirebaseQuotaUI("offline");
+            });
+
+            // Realtime listener for Team Members Collection
+            const teamColRef = collection(db, 'artifacts', appId, 'public', 'data', 'mri_team_members');
+            onSnapshot(teamColRef, (snapshot) => {
+                window.FIREBASE_QUOTA.readsCount += snapshot.size || 1;
+                const remoteTeam = [];
+                snapshot.forEach(docSnap => {
+                    const data = docSnap.data();
+                    if (data && data.name) remoteTeam.push(data);
+                });
+
+                if (remoteTeam.length > 0) {
+                    window.TEAM_MEMBERS = remoteTeam;
+                    if (typeof window.renderTeamDirectory === 'function') window.renderTeamDirectory();
+                } else if (snapshot.empty) {
+                    if (typeof window.seedInitialTeamData === 'function') {
+                        window.seedInitialTeamData();
+                    } else {
+                        window.PENDING_SEED_TEAM = true;
+                    }
+                }
+            }, (error) => {
+                console.debug("Firebase team listener error:", error);
+            });
+
+        } catch(e) {
+            console.debug("Local memory store fallback mode active:", e);
+            if (typeof window.updateFirebaseQuotaUI === 'function') window.updateFirebaseQuotaUI("offline");
+        }
+    </script>
+</head>
+<body class="h-full flex flex-col justify-between custom-scrollbar bg-slate-100 text-slate-800 font-sans">
+
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
+        <div class="max-w-[1920px] mx-auto px-3 sm:px-4 py-2 flex flex-wrap items-center justify-between gap-2.5">
+            
+            <!-- Brand Logo & Multi-Project Selector -->
+            <div class="flex items-center gap-2.5">
+                <div class="w-9 h-9 rounded-2xl bg-gradient-to-tr from-indigo-600 via-indigo-700 to-indigo-900 flex items-center justify-center text-white font-black text-lg shadow-md ring-2 ring-indigo-200 cursor-pointer" onclick="window.switchTab('gantt')">
+                    <i class="fas fa-layer-group"></i>
+                </div>
+                <div>
+                    <div class="flex items-center gap-2">
+                        <h1 class="font-black text-xs sm:text-sm tracking-wide text-slate-900 uppercase flex items-center gap-1.5">
+                            <span>MRI PROJECT PLANNER</span>
+                        </h1>
+                        <span class="bg-indigo-100 text-indigo-700 border border-indigo-200 text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1">
+                            <span class="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-pulse"></span>
+                            V 1.0
+                        </span>
+                    </div>
+                    <p class="text-[10px] text-slate-500 font-medium">PT Minum Rempah Indonesia</p>
+                </div>
+            </div>
+
+            <!-- Active Project Selector & Quick Actions -->
+            <div class="flex items-center space-x-1.5 bg-slate-50 px-2.5 py-1 rounded-2xl border border-slate-200 shadow-inner">
+                <i class="fas fa-folder-open text-indigo-600 text-xs"></i>
+                <span class="text-slate-600 font-bold text-[11px] hidden md:inline">Aktif Proyek:</span>
+                <select id="active-project-selector" onchange="window.handleProjectSwitch(this.value)" class="bg-white text-indigo-900 font-black text-xs rounded-xl px-2 py-1 border border-slate-300 focus:outline-none focus:border-indigo-600 max-w-[150px] sm:max-w-[210px] truncate shadow-xs">
+                </select>
+                <button onclick="window.openAddProjectModal()" class="text-[11px] bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-2 py-1 rounded-lg transition-all shadow-xs" title="Tambah Proyek Baru">
+                    <i class="fas fa-plus"></i> <span class="hidden sm:inline">Tambah</span>
+                </button>
+                <button onclick="window.duplicateActiveProject()" class="text-[11px] bg-amber-500 hover:bg-amber-600 text-white font-bold px-2 py-1 rounded-lg transition-all shadow-xs" title="Duplikat Proyek Ini">
+                    <i class="fas fa-copy"></i> <span class="hidden sm:inline">Duplikat</span>
+                </button>
+                <button onclick="window.editActiveProjectPrompt()" class="text-[11px] bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold px-1.5 py-1 rounded-lg transition-all" title="Edit Proyek Aktif">
+                    <i class="fas fa-pen"></i>
+                </button>
+                <button onclick="window.deleteActiveProjectPrompt()" class="text-[11px] bg-rose-100 hover:bg-rose-200 text-rose-700 font-bold px-1.5 py-1 rounded-lg transition-all" title="Hapus Proyek Aktif Langsung dari Firebase">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+
+            <!-- Firebase Live Status Indicator Badge -->
+            <div id="firebase-status-badge" class="flex items-center gap-2 bg-slate-900 text-white px-3 py-1 rounded-2xl border border-slate-700 text-[10px] font-mono shadow-xs">
+                <div class="flex items-center gap-1.5">
+                    <span id="fb-status-dot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <span id="fb-status-text" class="font-bold text-emerald-300">Firebase Live</span>
+                </div>
+                <span class="text-slate-600">|</span>
+                <div class="flex items-center gap-2 text-[9px] text-slate-300">
+                    <span title="Firestore Reads">Reads: <strong id="fb-reads-val" class="text-amber-400 font-mono">0</strong>/50k</span>
+                    <span title="Firestore Writes">Writes: <strong id="fb-writes-val" class="text-blue-400 font-mono">0</strong>/20k</span>
+                </div>
+            </div>
+
+            <!-- Top Action Buttons -->
+            <div class="flex items-center gap-1.5">
+                <button onclick="window.sendExecutiveWhatsAppReport()" class="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl transition-all flex items-center gap-1 shadow-xs" title="Kirim Laporan Proyek ke WhatsApp">
+                    <i class="fab fa-whatsapp text-sm"></i>
+                    <span class="hidden md:inline">Laporan WA</span>
+                </button>
+                <button onclick="window.openAddTaskModal()" class="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl transition-all flex items-center gap-1 shadow-xs">
+                    <i class="fas fa-plus-circle"></i>
+                    <span class="hidden sm:inline">Sub-Pekerjaan</span>
+                </button>
+                <button onclick="window.openBastModal()" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-900 text-white font-extrabold text-xs rounded-xl transition-all flex items-center gap-1 shadow-xs">
+                    <i class="fas fa-file-signature text-emerald-400"></i>
+                    <span>BAST</span>
+                </button>
+                <button onclick="window.exportA4PdfOrPng('pdf')" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-900 text-white font-extrabold text-xs rounded-xl transition-all flex items-center gap-1 shadow-xs" title="Export PDF A4">
+                    <i class="fas fa-file-pdf text-rose-400"></i>
+                    <span class="hidden md:inline">PDF A4</span>
+                </button>
+                <button onclick="window.exportGanttToExcel()" class="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs rounded-xl border border-emerald-300 transition-all flex items-center gap-1" title="Export Excel">
+                    <i class="fas fa-file-excel text-emerald-600"></i>
+                </button>
+            </div>
+
+        </div>
+    </header>
+
+    <nav class="bg-white border-b border-slate-200 px-4 py-1.5 sticky top-[53px] z-30 shadow-xs">
+        <div class="max-w-[1920px] mx-auto flex items-center justify-between overflow-x-auto custom-scrollbar">
+            <div class="flex items-center gap-1 text-xs font-bold shrink-0">
+                <button onclick="window.switchTab('gantt')" id="tab-btn-gantt" class="px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 bg-indigo-600 text-white shadow-xs">
+                    <i class="fas fa-chart-gantt"></i>
+                    <span>Timeline & WBS</span>
+                </button>
+                <button onclick="window.switchTab('kanban')" id="tab-btn-kanban" class="px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 text-slate-600 hover:bg-slate-100">
+                    <i class="fas fa-table-columns"></i>
+                    <span>Kanban</span>
+                </button>
+                <button onclick="window.switchTab('evm')" id="tab-btn-evm" class="px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 text-slate-600 hover:bg-slate-100">
+                    <i class="fas fa-chart-line text-blue-600"></i>
+                    <span>S-Curve & EVM</span>
+                </button>
+                <button onclick="window.switchTab('history')" id="tab-btn-history" class="px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 text-slate-600 hover:bg-slate-100">
+                    <i class="fas fa-clock-rotate-left text-amber-600"></i>
+                    <span>History Log</span>
+                </button>
+                <button onclick="window.switchTab('raci')" id="tab-btn-raci" class="px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 text-slate-600 hover:bg-slate-100">
+                    <i class="fas fa-users-gear text-purple-600"></i>
+                    <span>RACI & Workload</span>
+                </button>
+                <button onclick="window.switchTab('risks')" id="tab-btn-risks" class="px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 text-slate-600 hover:bg-slate-100">
+                    <i class="fas fa-shield-halved text-rose-600"></i>
+                    <span>Risk Governance</span>
+                </button>
+                <button onclick="window.switchTab('budget')" id="tab-btn-budget" class="px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 text-slate-600 hover:bg-slate-100">
+                    <i class="fas fa-wallet text-amber-600"></i>
+                    <span>Budget & RAB</span>
+                </button>
+                <button onclick="window.switchTab('team')" id="tab-btn-team" class="px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 text-slate-600 hover:bg-slate-100">
+                    <i class="fas fa-users-viewfinder text-indigo-600"></i>
+                    <span>Direktori Tim</span>
+                </button>
+                <button onclick="window.switchTab('bast')" id="tab-btn-bast" class="px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 text-slate-600 hover:bg-slate-100">
+                    <i class="fas fa-file-contract text-emerald-600"></i>
+                    <span>Arsip BAST</span>
+                </button>
+                <button onclick="window.switchTab('ai')" id="tab-btn-ai" class="px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 text-slate-600 hover:bg-slate-100">
+                    <i class="fas fa-wand-magic-sparkles text-amber-500"></i>
+                    <span>AI Brain</span>
+                </button>
+            </div>
+
+            <!-- Global Status & Delay Indicators -->
+            <div class="flex items-center gap-2 shrink-0">
+                <div id="project-delay-pill" class="hidden md:flex items-center gap-1.5 bg-rose-100 border border-rose-300 text-rose-900 px-3 py-1 rounded-full text-[11px] font-black animate-pulse">
+                    <i class="fas fa-triangle-exclamation text-rose-600"></i>
+                    <span id="project-delay-text">0 Task Delay</span>
+                </div>
+                <div id="bast-status-pill" class="hidden md:flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-800 px-3 py-1 rounded-full text-[11px] font-bold">
+                    <i class="fas fa-circle-check text-emerald-600"></i>
+                    <span id="bast-status-text">Semua Subtask Siap BAST</span>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main id="printable-a4-area" class="w-full max-w-[1920px] mx-auto px-3 sm:px-4 py-2.5 flex-1 flex flex-col space-y-2.5">
+
+        <!-- EXECUTIVE KPI STAT CARDS & ANALYTICS MONITOR -->
+        <div class="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
+            <!-- Stat Card 1: Project Health Status -->
+            <div id="card-health-status" class="glass-card p-3 rounded-2xl flex flex-col justify-between border-l-4 border-emerald-500 shadow-xs">
+                <div class="flex items-center justify-between text-slate-500">
+                    <span class="text-[10px] font-black uppercase tracking-wider">Health Status Proyek</span>
+                    <i id="health-status-icon" class="fas fa-shield-heart text-emerald-600 text-sm"></i>
+                </div>
+                <div class="my-1">
+                    <div id="health-status-title" class="text-sm sm:text-base font-black text-emerald-700 flex items-center gap-1.5">
+                        <span>ON TRACK</span>
+                    </div>
+                    <p id="health-status-desc" class="text-[10px] text-slate-500 font-medium truncate">Progres sesuai estimasi timeline</p>
+                </div>
+                <div class="flex items-center justify-between text-[10px] font-mono border-t border-slate-100 pt-1">
+                    <span class="text-slate-400">Plan vs Actual:</span>
+                    <span id="health-plan-vs-act" class="font-bold text-slate-800">50% / 55%</span>
+                </div>
+            </div>
+
+            <!-- Stat Card 2: Subtask Delay Warning -->
+            <div id="card-delay-status" class="glass-card p-3 rounded-2xl flex flex-col justify-between border-l-4 border-slate-300 shadow-xs">
+                <div class="flex items-center justify-between text-slate-500">
+                    <span class="text-[10px] font-black uppercase tracking-wider">Subtask Delay & Overdue</span>
+                    <i class="fas fa-triangle-exclamation text-rose-500 text-sm"></i>
+                </div>
+                <div class="my-1">
+                    <div id="card-delay-count" class="text-base sm:text-lg font-black text-slate-800 font-mono">0 Task</div>
+                    <p id="card-delay-subtext" class="text-[10px] text-slate-500 font-medium truncate">Semua subtask aman tepat waktu</p>
+                </div>
+                <div class="flex items-center justify-between text-[10px] font-mono border-t border-slate-100 pt-1">
+                    <span class="text-slate-400">Due Segera (≤ 7 Hari):</span>
+                    <span id="card-due-soon-count" class="font-bold text-amber-600">0 Task</span>
+                </div>
+            </div>
+
+            <!-- Stat Card 3: Completion & BAST Deliverables -->
+            <div class="glass-card p-3 rounded-2xl flex flex-col justify-between border-l-4 border-indigo-500 shadow-xs">
+                <div class="flex items-center justify-between text-slate-500">
+                    <span class="text-[10px] font-black uppercase tracking-wider">Subtask Tuntas (BAST)</span>
+                    <i class="fas fa-circle-check text-indigo-600 text-sm"></i>
+                </div>
+                <div class="my-1">
+                    <div id="card-subtask-done-ratio" class="text-base sm:text-lg font-black text-indigo-950 font-mono">0 / 0</div>
+                    <p id="card-bast-status-text" class="text-[10px] text-slate-500 font-medium truncate">Persiapan Handover Operasional</p>
+                </div>
+                <div class="flex items-center justify-between text-[10px] font-mono border-t border-slate-100 pt-1">
+                    <span class="text-slate-400">Overall Progress:</span>
+                    <span id="card-overall-progress-val" class="font-bold text-indigo-700">0%</span>
+                </div>
+            </div>
+
+            <!-- Stat Card 4: Projected Finish Date -->
+            <div class="glass-card p-3 rounded-2xl flex flex-col justify-between border-l-4 border-blue-500 shadow-xs">
+                <div class="flex items-center justify-between text-slate-500">
+                    <span class="text-[10px] font-black uppercase tracking-wider">Proyeksi Tanggal Selesai</span>
+                    <i class="far fa-calendar-check text-blue-600 text-sm"></i>
+                </div>
+                <div class="my-1">
+                    <div id="card-forecast-date" class="text-xs sm:text-sm font-black text-slate-900 font-mono">-- --- ----</div>
+                    <p id="card-forecast-variance" class="text-[10px] text-slate-500 font-medium truncate">Target Finish Baseline: --</p>
+                </div>
+                <div class="flex items-center justify-between text-[10px] font-mono border-t border-slate-100 pt-1">
+                    <span class="text-slate-400">SPI Efficiency:</span>
+                    <span id="card-spi-badge" class="font-bold text-blue-700">1.00</span>
+                </div>
+            </div>
+
+            <!-- Stat Card 5: Cost Variance & Alokasi RAB -->
+            <div class="glass-card p-3 rounded-2xl flex flex-col justify-between border-l-4 border-amber-500 shadow-xs col-span-2 sm:col-span-1">
+                <div class="flex items-center justify-between text-slate-500">
+                    <span class="text-[10px] font-black uppercase tracking-wider">Anggaran RAB vs Realisasi</span>
+                    <i class="fas fa-wallet text-amber-600 text-sm"></i>
+                </div>
+                <div class="my-1">
+                    <div id="card-budget-realization" class="text-xs sm:text-sm font-black text-slate-900 font-mono">Rp 0</div>
+                    <p id="card-budget-variance" class="text-[10px] text-slate-500 font-medium truncate">Sisa RAB: Rp 0</p>
+                </div>
+                <div class="flex items-center justify-between text-[10px] font-mono border-t border-slate-100 pt-1">
+                    <span class="text-slate-400">CPI Efficiency:</span>
+                    <span id="card-cpi-badge" class="font-bold text-emerald-700">1.00</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="glass-card p-2.5 rounded-2xl flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 text-xs">
+            <div class="flex flex-wrap items-center gap-2">
+                <!-- Division Filter -->
+                <div class="flex items-center space-x-1.5 bg-slate-50 px-2.5 py-1 rounded-xl border border-slate-200">
+                    <i class="fas fa-sitemap text-indigo-600 text-xs"></i>
+                    <span class="text-slate-500 font-bold text-[11px]">Divisi:</span>
+                    <select id="filter-division-select" onchange="window.refreshCurrentView()" class="bg-white text-slate-800 font-bold text-xs rounded-lg px-2 py-0.5 border border-slate-300 focus:outline-none focus:border-indigo-600">
+                        <option value="ALL">Semua Divisi (All)</option>
+                        <option value="Project">Project & Real Estate</option>
+                        <option value="Central Kitchen">Central Kitchen & Logistics</option>
+                        <option value="Marketing">Marketing & Brand</option>
+                        <option value="Operational">Operational Outlets</option>
+                        <option value="Training">Training & QA</option>
+                        <option value="Audit">Internal Audit</option>
+                        <option value="Finance">Finance & Accounting</option>
+                        <option value="HRD">Human Capital (HRD)</option>
+                        <option value="BOD">Board Of Directors (BOD)</option>
+                    </select>
+                </div>
+
+                <!-- Search Input -->
+                <div class="flex items-center space-x-1.5 bg-slate-50 px-2.5 py-1 rounded-xl border border-slate-200">
+                    <i class="fas fa-search text-slate-400 text-xs"></i>
+                    <input type="text" id="filter-search-input" onkeyup="window.refreshCurrentView()" placeholder="Cari Task, PIC, WBS..." class="bg-transparent text-xs text-slate-800 placeholder-slate-400 focus:outline-none w-32 sm:w-44 font-medium">
+                </div>
+
+                <!-- Gantt Scale Control -->
+                <div id="gantt-scale-controls" class="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200 font-black text-[10px]">
+                    <button onclick="window.setGanttScale('day')" id="scale-btn-day" class="px-2.5 py-1 rounded-lg text-slate-600 hover:text-slate-900 transition-all">Hari</button>
+                    <button onclick="window.setGanttScale('week')" id="scale-btn-week" class="px-2.5 py-1 rounded-lg bg-indigo-600 text-white font-black shadow-xs transition-all">Minggu</button>
+                    <button onclick="window.setGanttScale('month')" id="scale-btn-month" class="px-2.5 py-1 rounded-lg text-slate-600 hover:text-slate-900 transition-all">Bulan</button>
+                </div>
+            </div>
+
+            <!-- Global EVM Summary Metrics -->
+            <div class="flex items-center gap-2 self-end lg:self-auto text-xs font-bold overflow-x-auto py-0.5">
+                <div class="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded-xl border border-slate-200">
+                    <span class="text-slate-500">Progress:</span>
+                    <span id="stat-project-progress" class="text-indigo-900 font-mono font-black">0%</span>
+                </div>
+                <div class="flex items-center gap-1.5 bg-blue-50 px-2.5 py-1 rounded-xl border border-blue-200">
+                    <span class="text-blue-600">SPI:</span>
+                    <span id="stat-spi-val" class="text-blue-900 font-mono font-black">1.00</span>
+                </div>
+                <div class="flex items-center gap-1.5 bg-emerald-50 px-2.5 py-1 rounded-xl border border-emerald-200">
+                    <span class="text-emerald-600">CPI:</span>
+                    <span id="stat-cpi-val" class="text-emerald-900 font-mono font-black">1.00</span>
+                </div>
+                <div class="flex items-center gap-1.5 bg-amber-50 px-2.5 py-1 rounded-xl border border-amber-200">
+                    <span class="text-amber-600">RAB Total:</span>
+                    <span id="stat-total-budget" class="text-amber-900 font-mono font-black">Rp 0</span>
+                </div>
+            </div>
+        </div>
+
+        <div id="view-gantt" class="glass-card rounded-2xl overflow-hidden flex-1 flex flex-col min-h-[580px] border border-slate-200">
+            <div class="bg-slate-50 px-4 py-2 flex items-center justify-between border-b border-slate-200 text-xs">
+                <div class="flex items-center space-x-2">
+                    <i class="fas fa-chart-gantt text-indigo-600 font-black"></i>
+                    <span class="font-black uppercase tracking-wider text-slate-800">Timeline Proyek & WBS Multi-Divisi</span>
+                </div>
+                <div class="flex items-center gap-2.5 text-[10px] font-mono text-slate-600">
+                    <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded bg-indigo-600"></span> Proyek</span>
+                    <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded bg-emerald-600"></span> Done</span>
+                    <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded bg-rose-500"></span> Delay Warning</span>
+                </div>
+            </div>
+
+            <!-- SPLIT CONTAINER: WBS TABLE LEFT, GANTT TIMELINE RIGHT -->
+            <div class="flex-1 flex overflow-x-auto custom-scrollbar relative bg-white">
+                <div class="w-[580px] sm:w-[680px] shrink-0 border-r border-slate-200 bg-white z-20 flex flex-col">
+                    <div class="bg-slate-100 border-b border-slate-200 grid grid-cols-12 text-[10px] font-black uppercase text-slate-700 py-2.5 px-2 text-center sticky top-0 shadow-xs">
+                        <div class="col-span-1 border-r border-slate-200">WBS</div>
+                        <div class="col-span-4 border-r border-slate-200 text-left px-2">PEKERJAAN / TASK</div>
+                        <div class="col-span-2 border-r border-slate-200">DIVISI / PIC</div>
+                        <div class="col-span-2 border-r border-slate-200">DURASI & STATUS</div>
+                        <div class="col-span-1">%</div>
+                        <div class="col-span-2">AKSI</div>
+                    </div>
+                    <div id="gantt-table-rows" class="divide-y divide-slate-100 text-xs flex-1 overflow-y-auto custom-scrollbar"></div>
+                </div>
+
+                <div class="flex-1 min-w-[1200px] bg-slate-50/50 relative flex flex-col overflow-x-auto custom-scrollbar">
+                    <div class="bg-slate-100 sticky top-0 z-10 border-b border-slate-200 text-center font-mono text-[10px] select-none shadow-xs">
+                        <div id="gantt-header-top" class="flex border-b border-slate-200 font-extrabold bg-slate-200 text-slate-800"></div>
+                        <div id="gantt-header-bottom" class="flex text-[9px] font-bold text-slate-600"></div>
+                    </div>
+
+                    <div id="gantt-bars-container" class="flex-1 relative gantt-grid-day divide-y divide-slate-100 min-h-[480px]">
+                        <div id="gantt-today-line" class="absolute top-0 bottom-0 w-0.5 bg-amber-500 z-10 pointer-events-none shadow-sm">
+                            <span class="bg-amber-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-b absolute -top-0 -left-5 shadow">TODAY</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="view-kanban" class="hidden glass-card rounded-2xl p-4 min-h-[580px] border border-slate-200 flex-1 flex flex-col">
+            <div class="flex items-center justify-between mb-3 border-b border-slate-200 pb-2.5">
+                <div class="flex items-center space-x-2">
+                    <i class="fas fa-table-columns text-indigo-600 text-base"></i>
+                    <h2 class="font-black text-xs uppercase tracking-wider text-slate-900">Workflow Kanban Sub-Pekerjaan Proyek</h2>
+                </div>
+                <span class="text-[11px] text-slate-500 font-medium hidden sm:inline">
+                    <i class="fab fa-whatsapp text-emerald-600"></i> Laporan Otomatis dikirim ke PIC/Manager saat kartu dipindahkan
+                </span>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 flex-1">
+                <div class="bg-slate-50 rounded-xl p-3 border border-slate-200 flex flex-col">
+                    <div class="flex items-center justify-between font-extrabold text-xs text-slate-600 mb-2 pb-2 border-b border-slate-200">
+                        <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-slate-400"></span> TO DO</span>
+                        <span id="kanban-count-todo" class="bg-white border text-slate-700 px-2 py-0.5 rounded-full font-mono text-[10px]">0</span>
+                    </div>
+                    <div id="kanban-col-todo" class="space-y-2 flex-1 overflow-y-auto custom-scrollbar min-h-[280px]"></div>
+                </div>
+
+                <div class="bg-slate-50 rounded-xl p-3 border border-slate-200 flex flex-col">
+                    <div class="flex items-center justify-between font-extrabold text-xs text-blue-700 mb-2 pb-2 border-b border-slate-200">
+                        <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></span> IN PROGRESS</span>
+                        <span id="kanban-count-progress" class="bg-blue-100 text-blue-800 border border-blue-200 px-2 py-0.5 rounded-full font-mono text-[10px]">0</span>
+                    </div>
+                    <div id="kanban-col-progress" class="space-y-2 flex-1 overflow-y-auto custom-scrollbar min-h-[280px]"></div>
+                </div>
+
+                <div class="bg-slate-50 rounded-xl p-3 border border-slate-200 flex flex-col">
+                    <div class="flex items-center justify-between font-extrabold text-xs text-amber-700 mb-2 pb-2 border-b border-slate-200">
+                        <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span> REVIEW / QC</span>
+                        <span id="kanban-count-review" class="bg-amber-100 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-full font-mono text-[10px]">0</span>
+                    </div>
+                    <div id="kanban-col-review" class="space-y-2 flex-1 overflow-y-auto custom-scrollbar min-h-[280px]"></div>
+                </div>
+
+                <div class="bg-slate-50 rounded-xl p-3 border border-slate-200 flex flex-col">
+                    <div class="flex items-center justify-between font-extrabold text-xs text-emerald-700 mb-2 pb-2 border-b border-slate-200">
+                        <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> COMPLETED (BAST)</span>
+                        <span id="kanban-count-completed" class="bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full font-mono text-[10px]">0</span>
+                    </div>
+                    <div id="kanban-col-completed" class="space-y-2 flex-1 overflow-y-auto custom-scrollbar min-h-[280px]"></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="view-evm" class="hidden glass-card rounded-2xl p-4 min-h-[580px] border border-slate-200 flex-1 flex flex-col space-y-3">
+            <div class="flex items-center justify-between border-b border-slate-200 pb-2.5">
+                <div class="flex items-center space-x-2">
+                    <i class="fas fa-chart-line text-blue-600 text-lg"></i>
+                    <div>
+                        <h2 class="font-black text-xs uppercase tracking-wider text-slate-900">Earned Value Management (EVM) & Kurva S Proyek</h2>
+                        <p class="text-[10px] text-slate-500">PMBOK Standard EVM Metrics & Physical Curve</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                    <span class="text-[10px] font-bold text-slate-500 block">PLANNED VALUE (PV)</span>
+                    <span id="evm-pv" class="text-xs font-black font-mono text-slate-900">Rp 0</span>
+                </div>
+                <div class="p-3 bg-blue-50/50 border border-blue-200 rounded-xl">
+                    <span class="text-[10px] font-bold text-blue-700 block">EARNED VALUE (EV)</span>
+                    <span id="evm-ev" class="text-xs font-black font-mono text-blue-900">Rp 0</span>
+                </div>
+                <div class="p-3 bg-amber-50/50 border border-amber-200 rounded-xl">
+                    <span class="text-[10px] font-bold text-amber-700 block">ACTUAL COST (AC)</span>
+                    <span id="evm-ac" class="text-xs font-black font-mono text-amber-900">Rp 0</span>
+                </div>
+                <div class="p-3 bg-purple-50/50 border border-purple-200 rounded-xl">
+                    <span class="text-[10px] font-bold text-purple-700 block">ESTIMATE AT COMPLETION (EAC)</span>
+                    <span id="evm-eac" class="text-xs font-black font-mono text-purple-900">Rp 0</span>
+                </div>
+            </div>
+
+            <div class="bg-white p-3 rounded-xl border border-slate-200 flex-1 flex flex-col">
+                <h3 class="font-bold text-xs text-slate-800 uppercase mb-2">S-Curve: Baseline Progress vs Physical Progress</h3>
+                <div class="relative w-full h-64 sm:h-72">
+                    <canvas id="chart-s-curve"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div id="view-history" class="hidden glass-card rounded-2xl p-4 min-h-[580px] border border-slate-200 flex-1 flex flex-col space-y-3">
+            <div class="flex items-center justify-between border-b border-slate-200 pb-2.5">
+                <div class="flex items-center space-x-2">
+                    <i class="fas fa-clock-rotate-left text-amber-600 text-lg"></i>
+                    <div>
+                        <h2 class="font-black text-xs uppercase tracking-wider text-slate-900">History Log & Timetrail Proyek</h2>
+                        <p class="text-[10px] text-slate-500">Catatan Histori Perubahan Status, Subtask, Duplikasi & BAST Proyek</p>
+                    </div>
+                </div>
+                <button onclick="window.clearProjectHistory()" class="px-2.5 py-1 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-xl text-[10px] font-bold border border-rose-200">
+                    <i class="fas fa-trash-alt"></i> Bersihkan Log
+                </button>
+            </div>
+
+            <div id="project-history-list" class="space-y-2 flex-1 overflow-y-auto custom-scrollbar p-1">
+            </div>
+        </div>
+
+        <div id="view-raci" class="hidden glass-card rounded-2xl p-4 min-h-[580px] border border-slate-200 flex-1 flex flex-col space-y-3">
+            <div class="flex items-center justify-between border-b border-slate-200 pb-2.5">
+                <div class="flex items-center space-x-2">
+                    <i class="fas fa-users-gear text-purple-600 text-lg"></i>
+                    <h2 class="font-black text-xs uppercase tracking-wider text-slate-900">RACI Matrix & Resource Workload</h2>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 flex-1">
+                <div class="bg-white rounded-xl border border-slate-200 p-3 space-y-2 overflow-x-auto custom-scrollbar">
+                    <h3 class="font-black text-xs text-slate-900 uppercase">RACI Matrix Subtask</h3>
+                    <table class="w-full text-left text-xs">
+                        <thead class="bg-slate-100 text-slate-700 font-extrabold uppercase text-[10px]">
+                            <tr>
+                                <th class="p-2">WBS</th>
+                                <th class="p-2">Subtask</th>
+                                <th class="p-2">Divisi</th>
+                                <th class="p-2">PIC Lead (R)</th>
+                                <th class="p-2">Approver (A)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="raci-table-body" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                </div>
+
+                <div class="bg-slate-50 rounded-xl border border-slate-200 p-3 flex flex-col justify-between">
+                    <h3 class="font-black text-xs text-slate-900 uppercase mb-2">Beban Kerja PIC Across Active Projects</h3>
+                    <div class="relative w-full h-64">
+                        <canvas id="chart-resource-workload"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="view-risks" class="hidden glass-card rounded-2xl p-4 min-h-[580px] border border-slate-200 flex-1 flex flex-col space-y-3">
+            <div class="flex items-center justify-between border-b border-slate-200 pb-2.5">
+                <div class="flex items-center space-x-2">
+                    <i class="fas fa-shield-halved text-rose-600 text-lg"></i>
+                    <h2 class="font-black text-xs uppercase tracking-wider text-slate-900">Risk Governance Register</h2>
+                </div>
+                <button onclick="window.openAddRiskModal()" class="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-1.5">
+                    <i class="fas fa-plus"></i> Tambah Risiko
+                </button>
+            </div>
+
+            <div class="overflow-x-auto custom-scrollbar bg-white rounded-xl border border-slate-200 shadow-xs">
+                <table class="w-full text-left text-xs">
+                    <thead class="bg-slate-100 text-slate-700 font-extrabold uppercase text-[10px] border-b border-slate-200">
+                        <tr>
+                            <th class="p-2.5">ID</th>
+                            <th class="p-2.5">Deskripsi Potensi Risiko</th>
+                            <th class="p-2.5 text-center">Likelihood</th>
+                            <th class="p-2.5 text-center">Impact</th>
+                            <th class="p-2.5 text-center">Score</th>
+                            <th class="p-2.5">Rencana Mitigasi</th>
+                            <th class="p-2.5">Risk Owner</th>
+                            <th class="p-2.5">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="risk-table-body" class="divide-y divide-slate-100"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="view-budget" class="hidden glass-card rounded-2xl p-4 min-h-[580px] border border-slate-200 flex-1 flex flex-col space-y-3">
+            <div class="flex items-center justify-between border-b border-slate-200 pb-2.5">
+                <div class="flex items-center space-x-2">
+                    <i class="fas fa-wallet text-amber-600 text-lg"></i>
+                    <h2 class="font-black text-xs uppercase tracking-wider text-slate-900">Rencana Anggaran Biaya (RAB) vs Realisasi</h2>
+                </div>
+            </div>
+
+            <div class="overflow-x-auto custom-scrollbar bg-white rounded-xl border border-slate-200 shadow-xs">
+                <table class="w-full text-left text-xs">
+                    <thead class="bg-slate-100 text-slate-700 font-extrabold uppercase text-[10px] border-b border-slate-200">
+                        <tr>
+                            <th class="p-2.5">WBS</th>
+                            <th class="p-2.5">Rincian Pekerjaan / Subtask</th>
+                            <th class="p-2.5">Divisi</th>
+                            <th class="p-2.5">PIC</th>
+                            <th class="p-2.5 text-right">Target Budget (RAB)</th>
+                            <th class="p-2.5 text-right">Realisasi Biaya</th>
+                            <th class="p-2.5 text-right">Variansi Cost</th>
+                        </tr>
+                    </thead>
+                    <tbody id="budget-table-body" class="divide-y divide-slate-100"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="view-team" class="hidden glass-card rounded-2xl p-4 min-h-[580px] border border-slate-200 flex-1 flex flex-col space-y-3">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 pb-2.5 gap-2">
+                <div class="flex items-center space-x-2">
+                    <i class="fas fa-id-card text-indigo-600 text-lg"></i>
+                    <div>
+                        <h2 class="font-black text-xs uppercase tracking-wider text-slate-900">Direktori SDM & Tim PT Minum Rempah Indonesia</h2>
+                        <p class="text-[10px] text-slate-500">Database Anggota Tim, Jabatan, Email & WhatsApp (Realtime Firebase Connected)</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span id="team-total-count-badge" class="bg-indigo-50 border border-indigo-200 text-indigo-800 font-mono font-black text-xs px-3 py-1 rounded-xl">
+                        Total: 21 Personel
+                    </span>
+                    <button onclick="window.openAddTeamModal()" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-1.5">
+                        <i class="fas fa-user-plus"></i> Tambah SDM
+                    </button>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-xs font-bold">
+                <div class="flex items-center gap-2">
+                    <span class="text-slate-500">Filter Divisi:</span>
+                    <select id="team-filter-div" onchange="window.renderTeamDirectory()" class="bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs font-bold">
+                        <option value="ALL">Semua Divisi</option>
+                        <option value="Board Of Directors (BOD)">BOD</option>
+                        <option value="Audit">Audit</option>
+                        <option value="Finance">Finance</option>
+                        <option value="Central Kitchen">Central Kitchen</option>
+                        <option value="Project">Project</option>
+                        <option value="Marketing">Marketing</option>
+                        <option value="Operational">Operational</option>
+                        <option value="Training">Training</option>
+                        <option value="Human Resources Development (HRD)">HRD</option>
+                    </select>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="text-slate-500">Cari Personel:</span>
+                    <input type="text" id="team-search-input" onkeyup="window.renderTeamDirectory()" placeholder="Ketik nama, email..." class="bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-medium w-full focus:outline-none">
+                </div>
+            </div>
+
+            <div id="team-cards-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 overflow-y-auto custom-scrollbar flex-1 max-h-[600px] p-0.5"></div>
+        </div>
+
+        <div id="view-bast" class="hidden glass-card rounded-2xl p-4 min-h-[580px] border border-slate-200 flex-1 flex flex-col space-y-3">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 pb-2.5 gap-2">
+                <div class="flex items-center space-x-2">
+                    <i class="fas fa-file-signature text-emerald-600 text-lg"></i>
+                    <h2 class="font-black text-xs uppercase tracking-wider text-slate-900">Arsip & Generator Berita Acara Serah Terima (BAST)</h2>
+                </div>
+                <button onclick="window.openBastModal()" class="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-xs transition-all flex items-center gap-2 self-start sm:self-auto">
+                    <i class="fas fa-plus-circle"></i>
+                    <span>Buat Dokumen BAST Baru</span>
+                </button>
+            </div>
+
+            <div id="bast-documents-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3"></div>
+        </div>
+
+        <div id="view-ai" class="hidden glass-card rounded-2xl p-4 min-h-[580px] border border-slate-200 flex-1 flex flex-col space-y-3">
+            <div class="flex items-center justify-between border-b border-slate-200 pb-2.5">
+                <div class="flex items-center space-x-2">
+                    <i class="fas fa-wand-magic-sparkles text-amber-500 text-lg animate-spin"></i>
+                    <h2 class="font-black text-xs uppercase tracking-wider text-slate-900">Gemini 3 Flash AI Operations Brain Hub</h2>
+                </div>
+                <span class="bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-xl text-[10px] font-mono font-bold">
+                    gemini-3-flash-preview
+                </span>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                <button onclick="window.runAutoWBSGeneratorPrompt()" class="p-3 bg-slate-50 hover:bg-white rounded-2xl border border-slate-200 hover:border-indigo-400 text-left transition-all group shadow-xs">
+                    <div class="w-6 h-6 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center mb-1 font-bold text-xs group-hover:scale-110 transition-transform">
+                        <i class="fas fa-sitemap"></i>
+                    </div>
+                    <h4 class="font-black text-xs text-slate-900 uppercase mb-0.5">AI Auto-WBS Generator</h4>
+                    <p class="text-[10px] text-slate-500">Susun WBS + Subtask & RAB otomatis dari ide proyek Anda.</p>
+                </button>
+
+                <button onclick="window.runAIGroundedSearchBenchmark()" class="p-3 bg-slate-50 hover:bg-white rounded-2xl border border-slate-200 hover:border-blue-400 text-left transition-all group shadow-xs">
+                    <div class="w-6 h-6 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center mb-1 font-bold text-xs group-hover:scale-110 transition-transform">
+                        <i class="fas fa-globe"></i>
+                    </div>
+                    <h4 class="font-black text-xs text-slate-900 uppercase mb-0.5">Market Search Benchmark</h4>
+                    <p class="text-[10px] text-slate-500">Benchmark standar industri & estimasi harga vendor via Google Search.</p>
+                </button>
+
+                <button onclick="window.runAIMeetingNotesToTasks()" class="p-3 bg-slate-50 hover:bg-white rounded-2xl border border-slate-200 hover:border-emerald-400 text-left transition-all group shadow-xs">
+                    <div class="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center mb-1 font-bold text-xs group-hover:scale-110 transition-transform">
+                        <i class="fas fa-comments"></i>
+                    </div>
+                    <h4 class="font-black text-xs text-slate-900 uppercase mb-0.5">Notulensi Rapat -> Task</h4>
+                    <p class="text-[10px] text-slate-500">Ubah notulensi / chat WA menjadi subtask ber-PIC & deadline.</p>
+                </button>
+
+                <button onclick="window.runAIAudit()" class="p-3 bg-slate-50 hover:bg-white rounded-2xl border border-slate-200 hover:border-amber-400 text-left transition-all group shadow-xs">
+                    <div class="w-6 h-6 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center mb-1 font-bold text-xs group-hover:scale-110 transition-transform">
+                        <i class="fas fa-shield-halved"></i>
+                    </div>
+                    <h4 class="font-black text-xs text-slate-900 uppercase mb-0.5">Audit Risiko & Delay</h4>
+                    <p class="text-[10px] text-slate-500">Evaluasi delay, bottleneck divisi & rekomendasi aksi taktis.</p>
+                </button>
+            </div>
+
+            <div class="bg-slate-900 rounded-2xl border border-slate-800 p-3.5 flex-1 flex flex-col space-y-2 text-white">
+                <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                    <span class="text-xs font-mono font-bold text-amber-400 flex items-center gap-2">
+                        <i class="fas fa-terminal"></i> AI Output Console
+                    </span>
+                    <button onclick="navigator.clipboard.writeText(document.getElementById('ai-output-content').innerText); window.showToast('Teks AI disalin!', 'success');" class="text-[10px] text-amber-400 hover:underline">
+                        <i class="far fa-copy"></i> Copy Output
+                    </button>
+                </div>
+                
+                <div id="ai-loading-spinner" class="hidden flex-1 flex flex-col items-center justify-center py-10 space-y-2">
+                    <div class="w-8 h-8 border-4 border-amber-400 border-t-transparent rounded-full animate-spin"></div>
+                    <span class="text-xs font-mono text-amber-400 font-bold animate-pulse">Menghubungkan ke Gemini 3 Flash AI...</span>
+                </div>
+
+                <div id="ai-output-content" class="flex-1 text-xs font-mono leading-relaxed text-slate-200 overflow-y-auto custom-scrollbar whitespace-pre-wrap p-2">
+Pilih salah satu tombol operasi AI di atas untuk memulai analisis cerdas PT Minum Rempah Indonesia.
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- MODAL 2: SUBTASK MODAL WITH PHOTO/VIDEO ATTACHMENTS -->
+    <div id="modal-task" class="hidden fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white max-w-md w-full rounded-2xl p-4 shadow-2xl border border-slate-200 space-y-3 max-h-[90vh] overflow-y-auto custom-scrollbar">
+            <div class="flex items-center justify-between border-b border-slate-200 pb-2.5">
+                <h3 id="modal-task-header-title" class="font-extrabold text-xs text-slate-900 flex items-center gap-2">
+                    <i class="fas fa-tasks text-indigo-600"></i> Sub-Pekerjaan Divisi
+                </h3>
+                <button onclick="window.closeTaskModal()" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times"></i></button>
+            </div>
+            <form onsubmit="window.handleSaveTask(event)" class="space-y-2.5 text-xs">
+                <input type="hidden" id="form-task-id">
+                <div>
+                    <label class="block font-bold text-slate-700 mb-1">Nama Sub-Pekerjaan</label>
+                    <input type="text" id="form-task-title" required placeholder="Contoh: Installasi Kelistrikan Barista" class="w-full text-xs p-2 rounded-xl border border-slate-300 font-bold text-slate-900">
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">Divisi PIC</label>
+                        <select id="form-task-division" class="w-full text-xs p-2 rounded-xl border border-slate-300 font-bold bg-white">
+                            <option value="Project">Project</option>
+                            <option value="Central Kitchen">Central Kitchen</option>
+                            <option value="Operational">Operational</option>
+                            <option value="Marketing">Marketing</option>
+                            <option value="Audit">Audit</option>
+                            <option value="Finance">Finance</option>
+                            <option value="HRD">HRD</option>
+                            <option value="Training">Training</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">PIC Penanggung Jawab</label>
+                        <select id="form-task-pic" class="w-full text-xs p-2 rounded-xl border border-slate-300 font-bold bg-white">
+                        </select>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">Tanggal Mulai</label>
+                        <input type="date" id="form-task-start" required class="w-full text-xs p-2 rounded-xl border border-slate-300 font-bold">
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">Target Finish</label>
+                        <input type="date" id="form-task-finish" required class="w-full text-xs p-2 rounded-xl border border-slate-300 font-bold">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">Progress (%)</label>
+                        <input type="number" id="form-task-progress" min="0" max="100" value="0" required class="w-full text-xs p-2 rounded-xl border border-slate-300 font-bold">
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">Estimasi Biaya (Rp) <span class="text-[10px] font-normal text-slate-400">(Opsional)</span></label>
+                        <input type="number" id="form-task-cost" placeholder="Boleh dikosongkan" class="w-full text-xs p-2 rounded-xl border border-slate-300 font-mono font-bold text-emerald-700">
+                    </div>
+                </div>
+
+                <!-- Attachment Upload Section for Photos or Videos -->
+                <div class="p-2.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
+                    <label class="block font-extrabold text-[11px] text-slate-800 flex items-center justify-between">
+                        <span><i class="fas fa-paperclip text-indigo-600"></i> Lampirkan Bukti Foto / Video</span>
+                        <span class="text-[9px] text-slate-400 font-normal">Format MP4, JPG, PNG</span>
+                    </label>
+                    <input type="file" id="form-task-media" accept="image/*,video/*" multiple onchange="window.handleTaskMediaUpload(event)" class="w-full text-[11px] p-1.5 bg-white rounded-lg border border-slate-300">
+                    <div id="task-attachments-preview" class="grid grid-cols-3 gap-1.5 pt-1"></div>
+                </div>
+
+                <div class="flex gap-2 pt-1">
+                    <button type="button" onclick="window.closeTaskModal()" class="flex-1 py-2 bg-slate-100 text-slate-700 font-bold text-xs rounded-xl">Batal</button>
+                    <button type="submit" class="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs rounded-xl shadow-xs">Simpan Subtask</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL 1: PROJECT MODAL -->
+    <div id="modal-project" class="hidden fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white max-w-md w-full rounded-2xl p-5 shadow-2xl border border-slate-200 space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-200 pb-3">
+                <h3 id="modal-project-header-title" class="font-extrabold text-xs text-slate-900 flex items-center gap-2">
+                    <i class="fas fa-folder-plus text-indigo-600"></i> Data Proyek Utama
+                </h3>
+                <button onclick="window.closeProjectModal()" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times"></i></button>
+            </div>
+            <form onsubmit="window.handleSaveProject(event)" class="space-y-3 text-xs">
+                <input type="hidden" id="form-proj-id">
+                <div>
+                    <label class="block font-bold text-slate-700 mb-1">Nama Proyek Utama</label>
+                    <input type="text" id="form-proj-title" required placeholder="Contoh: Pembukaan Outlet Soreang 2" class="w-full text-xs p-2.5 rounded-xl border border-slate-300 font-bold text-slate-900">
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">Tanggal Mulai</label>
+                        <input type="date" id="form-proj-start" required class="w-full text-xs p-2.5 rounded-xl border border-slate-300 font-bold">
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">Target Finish</label>
+                        <input type="date" id="form-proj-finish" required class="w-full text-xs p-2.5 rounded-xl border border-slate-300 font-bold">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">Divisi Lead</label>
+                        <select id="form-proj-division" class="w-full text-xs p-2.5 rounded-xl border border-slate-300 font-bold bg-white">
+                            <option value="Project">Project</option>
+                            <option value="Central Kitchen">Central Kitchen</option>
+                            <option value="Operational">Operational</option>
+                            <option value="Marketing">Marketing</option>
+                            <option value="Audit">Audit</option>
+                            <option value="Finance">Finance</option>
+                            <option value="HRD">HRD</option>
+                            <option value="BOD">Board Of Directors (BOD)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">PIC Lead (Dari Direktori SDM)</label>
+                        <select id="form-proj-pic" class="w-full text-xs p-2.5 rounded-xl border border-slate-300 font-bold bg-white">
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <label class="block font-bold text-slate-700 mb-1">Total RAB Budget (Rp) <span class="text-[10px] font-normal text-slate-400">(Opsional)</span></label>
+                    <input type="number" id="form-proj-budget" placeholder="Boleh dikosongkan" class="w-full text-xs p-2.5 rounded-xl border border-slate-300 font-mono font-bold text-amber-700">
+                </div>
+                <div class="flex gap-2 pt-2">
+                    <button type="button" onclick="window.closeProjectModal()" class="flex-1 py-2.5 bg-slate-100 text-slate-700 font-bold text-xs rounded-xl">Batal</button>
+                    <button type="submit" class="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs rounded-xl shadow-xs">Simpan Proyek</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL TEAM MEMBER -->
+    <div id="modal-team" class="hidden fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white max-w-md w-full rounded-2xl p-4 shadow-2xl border border-slate-200 space-y-3">
+            <div class="flex items-center justify-between border-b border-slate-200 pb-2">
+                <h3 id="modal-team-title" class="font-extrabold text-xs text-slate-900 flex items-center gap-2">
+                    <i class="fas fa-user-plus text-indigo-600"></i> Tambah Anggota Tim SDM
+                </h3>
+                <button onclick="document.getElementById('modal-team').classList.add('hidden')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times"></i></button>
+            </div>
+            <form onsubmit="window.handleSaveTeamMember(event)" class="space-y-2.5 text-xs">
+                <input type="hidden" id="form-team-id">
+                <div>
+                    <label class="block font-bold text-slate-700 mb-1">Nama Lengkap Personel</label>
+                    <input type="text" id="form-team-name" required placeholder="Buyung Salbi Alghifari" class="w-full text-xs p-2 rounded-xl border border-slate-300 font-bold text-slate-900">
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">Jabatan / Role</label>
+                        <input type="text" id="form-team-role" required placeholder="Direktur Utama" class="w-full text-xs p-2 rounded-xl border border-slate-300 font-bold">
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">Divisi</label>
+                        <select id="form-team-division" class="w-full text-xs p-2 rounded-xl border border-slate-300 font-bold bg-white">
+                            <option value="Board Of Directors (BOD)">BOD</option>
+                            <option value="Audit">Audit</option>
+                            <option value="Finance">Finance</option>
+                            <option value="Central Kitchen">Central Kitchen</option>
+                            <option value="Project">Project</option>
+                            <option value="Marketing">Marketing</option>
+                            <option value="Operational">Operational</option>
+                            <option value="Training">Training</option>
+                            <option value="Human Resources Development (HRD)">HRD</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">Email Resmi</label>
+                        <input type="email" id="form-team-email" required placeholder="email@gmail.com" class="w-full text-xs p-2 rounded-xl border border-slate-300">
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">WhatsApp (+62)</label>
+                        <input type="text" id="form-team-phone" required placeholder="+6285720755426" class="w-full text-xs p-2 rounded-xl border border-slate-300 font-mono font-bold">
+                    </div>
+                </div>
+                <div class="flex gap-2 pt-1">
+                    <button type="button" onclick="document.getElementById('modal-team').classList.add('hidden')" class="flex-1 py-2 bg-slate-100 text-slate-700 font-bold text-xs rounded-xl">Batal</button>
+                    <button type="submit" class="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs rounded-xl shadow-xs">Simpan Personel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL 3: BAST GENERATOR MODAL -->
+    <div id="modal-bast-generator" class="hidden fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white max-w-xl w-full rounded-2xl p-5 shadow-2xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto custom-scrollbar">
+            <div class="flex items-center justify-between border-b border-slate-200 pb-3">
+                <h3 class="font-extrabold text-xs text-slate-900 flex items-center gap-2">
+                    <i class="fas fa-file-signature text-emerald-600"></i> Generator Berita Acara Serah Terima (BAST)
+                </h3>
+                <button onclick="document.getElementById('modal-bast-generator').classList.add('hidden')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times"></i></button>
+            </div>
+            <form onsubmit="window.handleGenerateBast(event)" class="space-y-3 text-xs">
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">Nomor BAST Dokumen</label>
+                        <input type="text" id="bast-doc-num" required class="w-full text-xs p-2.5 rounded-xl border border-slate-300 font-mono font-bold">
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">Tanggal Serah Terima</label>
+                        <input type="date" id="bast-doc-date" required class="w-full text-xs p-2.5 rounded-xl border border-slate-300 font-bold">
+                    </div>
+                </div>
+                <div class="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+                    <span class="font-black text-[10px] text-slate-800 uppercase block">PIHAK PERTAMA (Pemberi / Tim Project)</span>
+                    <div class="grid grid-cols-2 gap-2">
+                        <input type="text" id="bast-party1-name" placeholder="Nama Pihak 1" required class="w-full text-xs p-2 rounded-lg border border-slate-300 font-bold">
+                        <input type="text" id="bast-party1-role" placeholder="Jabatan / Role" required class="w-full text-xs p-2 rounded-lg border border-slate-300">
+                    </div>
+                </div>
+                <div class="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+                    <span class="font-black text-[10px] text-slate-800 uppercase block">PIHAK KEDUA (Penerima / Operasional Outlet)</span>
+                    <div class="grid grid-cols-2 gap-2">
+                        <input type="text" id="bast-party2-name" placeholder="Nama Pihak 2" required class="w-full text-xs p-2 rounded-lg border border-slate-300 font-bold">
+                        <input type="text" id="bast-party2-role" placeholder="Jabatan / Role" required class="w-full text-xs p-2 rounded-lg border border-slate-300">
+                    </div>
+                </div>
+                <div>
+                    <label class="block font-bold text-slate-700 mb-1">Daftar Deliverables Hasil Pekerjaan</label>
+                    <textarea id="bast-deliverables" rows="3" required class="w-full text-xs p-2.5 rounded-xl border border-slate-300 font-mono"></textarea>
+                </div>
+                <div>
+                    <div class="flex items-center justify-between mb-1">
+                        <label class="font-bold text-slate-700">Tanda Tangan Digital Pihak 1</label>
+                        <button type="button" onclick="window.clearSignature()" class="text-[10px] text-rose-600 font-bold hover:underline">Hapus Tanda Tangan</button>
+                    </div>
+                    <canvas id="signature-pad" width="480" height="120" class="border border-slate-300 rounded-xl bg-slate-50 w-full cursor-crosshair"></canvas>
+                </div>
+                <div class="flex gap-2 pt-2">
+                    <button type="button" onclick="document.getElementById('modal-bast-generator').classList.add('hidden')" class="flex-1 py-2.5 bg-slate-100 text-slate-700 font-bold text-xs rounded-xl">Batal</button>
+                    <button type="submit" class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl shadow-xs">Terbitkan Dokumen BAST</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL 4: BAST PREVIEW & PRINT DOKUMEN MODAL -->
+    <div id="modal-bast-view" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white max-w-3xl w-full rounded-2xl p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[95vh] overflow-y-auto custom-scrollbar">
+            <div class="flex items-center justify-between border-b border-slate-200 pb-3 no-print">
+                <span id="preview-bast-id" class="font-mono font-bold text-xs text-indigo-600"></span>
+                <div class="flex items-center gap-2">
+                    <button onclick="window.printBastDoc()" class="px-3 py-1.5 bg-indigo-600 text-white text-xs font-bold rounded-xl shadow-xs flex items-center gap-1.5">
+                        <i class="fas fa-print"></i> Cetak Dokumen PDF
+                    </button>
+                    <button onclick="document.getElementById('modal-bast-view').classList.add('hidden')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times"></i></button>
+                </div>
+            </div>
+
+            <!-- PRINTABLE BAST DOCUMENT -->
+            <div id="printable-bast-document" class="p-6 bg-white space-y-6 text-slate-900 text-xs">
+                <div class="text-center border-b-2 border-slate-900 pb-4 space-y-1">
+                    <h2 class="text-base font-black uppercase tracking-wider text-slate-900">PT MINUM REMPAH INDONESIA</h2>
+                    <p class="text-[10px] text-slate-600">Jl. Raya Soreang Bandung • Enterprise Multi-Project Management</p>
+                    <h3 class="text-xs font-black underline pt-2 uppercase">BERITA ACARA SERAH TERIMA (BAST)</h3>
+                    <p class="font-mono text-[10px]">Nomor: <span id="preview-bast-num" class="font-bold">--</span></p>
+                </div>
+
+                <p class="leading-relaxed">
+                    Pada hari ini, <strong id="preview-bast-date">--</strong>, kami yang bertanda tangan di bawah ini secara resmi menyatakan kesepakatan serah terima pekerjaan proyek:
+                </p>
+
+                <div class="space-y-3 pl-3 border-l-2 border-indigo-600 my-2">
+                    <div>
+                        <strong class="block text-slate-900 uppercase">PIHAK PERTAMA (Pemberi / Pelaksana Proyek):</strong>
+                        <p>Nama: <span id="preview-bast-p1-name" class="font-bold"></span></p>
+                        <p>Jabatan: <span id="preview-bast-p1-role" class="text-slate-600"></span></p>
+                    </div>
+                    <div>
+                        <strong class="block text-slate-900 uppercase">PIHAK KEDUA (Penerima / Operations Outlet):</strong>
+                        <p>Nama: <span id="preview-bast-p2-name" class="font-bold"></span></p>
+                        <p>Jabatan: <span id="preview-bast-p2-role" class="text-slate-600"></span></p>
+                    </div>
+                </div>
+
+                <div class="space-y-1">
+                    <p><strong>Objek Proyek:</strong> <span id="preview-bast-project-title" class="font-bold text-indigo-900"></span></p>
+                    <p>Pihak Pertama telah menyelesaikan seluruh rincian hasil pengerjaan proyek (deliverables) sebagai berikut:</p>
+                    <pre id="preview-bast-deliverables-list" class="bg-slate-50 p-3 rounded-xl border border-slate-200 font-mono text-[11px] whitespace-pre-wrap"></pre>
+                </div>
+
+                <p class="leading-relaxed">
+                    Demikian Berita Acara Serah Terima (BAST) ini dibuat dan ditandatangani oleh kedua belah pihak dalam keadaan sadar tanpa paksaan dari pihak manapun untuk dipergunakan sebagaimana mestinya.
+                </p>
+
+                <div class="grid grid-cols-2 gap-8 text-center pt-8">
+                    <div class="flex flex-col items-center justify-between h-32">
+                        <p class="font-bold">PIHAK PERTAMA</p>
+                        <img id="preview-p1-sig-img" class="h-16 object-contain hidden" alt="Signature">
+                        <p id="preview-p1-sig-name" class="font-bold underline"></p>
+                    </div>
+                    <div class="flex flex-col items-center justify-between h-32">
+                        <p class="font-bold">PIHAK KEDUA</p>
+                        <div class="h-16 border-b border-dashed border-slate-300 w-32"></div>
+                        <p id="preview-p2-sig-name" class="font-bold underline"></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL MEDIA PREVIEW -->
+    <div id="modal-media-viewer" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white max-w-2xl w-full rounded-2xl p-4 shadow-2xl border border-slate-200 space-y-3">
+            <div class="flex items-center justify-between border-b border-slate-200 pb-2">
+                <span id="media-modal-title" class="font-bold text-xs text-slate-800">Lampiran Media Subtask</span>
+                <button onclick="document.getElementById('modal-media-viewer').classList.add('hidden')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times"></i></button>
+            </div>
+            <div id="media-modal-body" class="flex items-center justify-center min-h-[250px] bg-slate-900 rounded-xl overflow-hidden">
+            </div>
+        </div>
+    </div>
+
+    <!-- CUSTOM CONFIRMATION DIALOG MODAL -->
+    <div id="modal-custom-dialog" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white max-w-sm w-full rounded-2xl p-4 shadow-2xl border border-slate-200 space-y-3">
+            <div class="flex items-center gap-2.5 text-slate-900 font-extrabold text-xs border-b border-slate-100 pb-2">
+                <i id="custom-dialog-icon" class="fas fa-question-circle text-indigo-600 text-sm"></i>
+                <span id="custom-dialog-title">Konfirmasi Aksi</span>
+            </div>
+            <p id="custom-dialog-message" class="text-xs text-slate-600 font-medium leading-relaxed">Apakah Anda yakin ingin melanjutkan?</p>
+            <div id="custom-dialog-input-wrap" class="hidden">
+                <input type="text" id="custom-dialog-input" class="w-full text-xs p-2 rounded-xl border border-slate-300 font-bold text-slate-900 focus:outline-none focus:border-indigo-600">
+            </div>
+            <div class="flex items-center gap-2 pt-1">
+                <button type="button" id="custom-dialog-btn-cancel" class="flex-1 py-2 bg-slate-100 text-slate-700 font-bold text-xs rounded-xl hover:bg-slate-200">Batal</button>
+                <button type="button" id="custom-dialog-btn-confirm" class="flex-1 py-2 bg-indigo-600 text-white font-black text-xs rounded-xl shadow-xs hover:bg-indigo-700">Ya, Lanjutkan</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- TOAST CONTAINER -->
+    <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+    <script>
+        // Division Color Mapping Helper
+        window.getDivisionColor = function(divName) {
+            if (!divName) return { bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-200', bar: 'bg-slate-600' };
+            const d = divName.toLowerCase();
+            if (d.includes('project')) return { bg: 'bg-indigo-100', text: 'text-indigo-800', border: 'border-indigo-300', bar: 'bg-indigo-600' };
+            if (d.includes('central kitchen') || d.includes('ck')) return { bg: 'bg-amber-100', text: 'text-amber-800', border: 'border-amber-300', bar: 'bg-amber-600' };
+            if (d.includes('marketing')) return { bg: 'bg-fuchsia-100', text: 'text-fuchsia-800', border: 'border-fuchsia-300', bar: 'bg-fuchsia-600' };
+            if (d.includes('operational')) return { bg: 'bg-emerald-100', text: 'text-emerald-800', border: 'border-emerald-300', bar: 'bg-emerald-600' };
+            if (d.includes('training')) return { bg: 'bg-cyan-100', text: 'text-cyan-800', border: 'border-cyan-300', bar: 'bg-cyan-600' };
+            if (d.includes('audit')) return { bg: 'bg-purple-100', text: 'text-purple-800', border: 'border-purple-300', bar: 'bg-purple-600' };
+            if (d.includes('finance')) return { bg: 'bg-blue-100', text: 'text-blue-800', border: 'border-blue-300', bar: 'bg-blue-600' };
+            if (d.includes('hrd') || d.includes('human')) return { bg: 'bg-teal-100', text: 'text-teal-800', border: 'border-teal-300', bar: 'bg-teal-600' };
+            if (d.includes('bod') || d.includes('board')) return { bg: 'bg-rose-100', text: 'text-rose-800', border: 'border-rose-300', bar: 'bg-rose-600' };
+            return { bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-200', bar: 'bg-slate-600' };
+        };
+
+        window.getDueDateWarning = function(finishDateStr, progress) {
+            if (progress === 100) return null;
+            if (!finishDateStr) return null;
+
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const finishDate = new Date(finishDateStr);
+            finishDate.setHours(0, 0, 0, 0);
+
+            const diffTime = finishDate - today;
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+            if (diffDays < 0) {
+                return {
+                    type: 'delayed',
+                    days: Math.abs(diffDays),
+                    label: `🚨 DELAY ${Math.abs(diffDays)} Hari`,
+                    class: 'bg-rose-600 text-white animate-pulse font-black px-1.5 py-0.5 rounded text-[9px] shadow-xs'
+                };
+            } else if (diffDays === 0) {
+                return {
+                    type: 'due_today',
+                    days: 0,
+                    label: `⚠️ DUE HARI INI!`,
+                    class: 'bg-amber-500 text-white font-black animate-bounce px-1.5 py-0.5 rounded text-[9px] shadow-xs'
+                };
+            } else if (diffDays <= 7) {
+                return {
+                    type: 'due_soon',
+                    days: diffDays,
+                    label: `⏳ Due ${diffDays} Hari`,
+                    class: 'bg-amber-100 text-amber-800 border border-amber-300 font-extrabold px-1.5 py-0.5 rounded text-[9px]'
+                };
+            }
+            return null;
+        };
+
+        window.TEAM_MEMBERS = [
+            { id: "tm-1", name: "Buyung Salbi Alghifari", role: "Direktur Utama", division: "Board Of Directors (BOD)", email: "alghifaribuyung@gmail.com", phone: "+6285720755426" },
+            { id: "tm-2", name: "Dally Sumirat", role: "General Manager", division: "Board Of Directors (BOD)", email: "generalmanagermri@gmail.com", phone: "+6285887799938" },
+            { id: "tm-3", name: "Syahrun Fazal", role: "Audit Manager", division: "Audit", email: "syahrun.fazal@gmail.com", phone: "+6281220035556" },
+            { id: "tm-4", name: "Desti Nopianti Priatna", role: "Herbalist & Curator", division: "Board Of Directors (BOD)", email: "destides02@gmail.com", phone: "+6289530346394" },
+            { id: "tm-5", name: "Syifa Mashfufatun", role: "Finance & CK Manager", division: "Finance", email: "syifamn30@gmail.com", phone: "+6289505217622" },
+            { id: "tm-6", name: "Mutiara Tsalitsa", role: "Central Kitchen Supervisor", division: "Central Kitchen", email: "mutiaratsalitsa@gmail.com", phone: "+6289644202685" },
+            { id: "tm-7", name: "Aji Sharijal Suhandika", role: "Project Manager", division: "Project", email: "suhandikaajie.23@gmail.com", phone: "+6285869138806" },
+            { id: "tm-8", name: "Atala Aminia Gunawan", role: "Marketing Supervisor", division: "Marketing", email: "aminiaatala@gmail.com", phone: "+6289671551429" },
+            { id: "tm-9", name: "Anis Fuad", role: "Maintenance & General Affair", division: "Project", email: "anisfuad0987@gmail.com", phone: "+6289655748268" },
+            { id: "tm-10", name: "Adi Husan Fauzi", role: "Area Supervisor", division: "Operational", email: "adihusanfauzi@gmail.com", phone: "+6281288216954" },
+            { id: "tm-11", name: "Arisandi", role: "People Development Center Staff", division: "Training", email: "leoricky86@gmail.com", phone: "+6285794148295" },
+            { id: "tm-12", name: "Muhammad Tito Rochmana", role: "Training Manager", division: "Training", email: "rochmanatito@gmail.com", phone: "+6287745591490" },
+            { id: "tm-13", name: "Salwa Asipa Nasiah", role: "Accountant", division: "Finance", email: "salwaasifanaz@gmail.com", phone: "+6287737229814" },
+            { id: "tm-14", name: "Mishbah Mubarok", role: "Public Relation", division: "Marketing", email: "misbahmubarok97@gmail.com", phone: "+6287822384747" },
+            { id: "tm-15", name: "Sri Sulastri", role: "Customer Service Officer", division: "Marketing", email: "srisulastri310@gmail.com", phone: "+6281222331918" },
+            { id: "tm-16", name: "Fauzan Yusron", role: "Area Supervisor", division: "Operational", email: "yusronfauzan17@gmail.com", phone: "+6281939667249" },
+            { id: "tm-17", name: "Mutiara Azahra Dahlia", role: "HRD Staff Leader", division: "Human Resources Development (HRD)", email: "dahliaazahra23@gmail.com", phone: "+6282218752960" },
+            { id: "tm-18", name: "Muhamad Faisal", role: "Operational Manager", division: "Operational", email: "opsm.mri@gmail.com", phone: "+628216016008" },
+            { id: "tm-19", name: "Resa Safirah", role: "Marketing Staff - Event Planner", division: "Marketing", email: "resasafirah109@gmail.com", phone: "+62895639267907" },
+            { id: "tm-20", name: "Jamalludin", role: "Marketing Staff - Content Creator", division: "Marketing", email: "mallikjamal568@gmail.com", phone: "+6283100703173" },
+            { id: "tm-21", name: "Hilwa Tsabita Ihsani", role: "Marketing Staff - Design Graphics", division: "Marketing", email: "hilwatsbt24@gmail.com", phone: "+628997530574" }
+        ];
+
+        window.ALL_PROJECTS = [
+            {
+                id: "proj-soreang",
+                wbs: "1",
+                title: "Pembukaan Outlet New Soreang",
+                division: "Project",
+                pic: "Aji Sharijal Suhandika",
+                startDate: "2026-09-01",
+                finishDate: "2026-11-30",
+                progress: 55,
+                budget: 180000000,
+                autoBastGenerated: false,
+                subtasks: [
+                    { id: "task-1-1", wbs: "1.1", title: "Sewa Tempat & Perizinan Lokasi Outlet", division: "Project", pic: "Aji Sharijal", startDate: "2026-09-01", finishDate: "2026-09-15", progress: 100, cost: 45000000, approver: "BOD Direksi", attachments: [], criticalPath: true },
+                    { id: "task-1-2", wbs: "1.2", title: "Renovasi Interior & Desain Bar Barista", division: "Project", pic: "Anis Fuad", startDate: "2026-09-16", finishDate: "2026-10-02", progress: 80, cost: 65000000, approver: "Project Manager", attachments: [], criticalPath: true },
+                    { id: "task-1-3", wbs: "1.3", title: "Pengiriman Alat & Suplai Bahan CK", division: "Central Kitchen", pic: "Mutiara Tsalitsa", startDate: "2026-10-01", finishDate: "2026-10-08", progress: 30, cost: 25000000, approver: "Head of CK", attachments: [], criticalPath: false },
+                    { id: "task-1-4", wbs: "1.4", title: "Recruitment & Training Crew Outlet", division: "Training", pic: "Arisandi", startDate: "2026-10-10", finishDate: "2026-11-15", progress: 10, cost: 12000000, approver: "HRD Manager", attachments: [], criticalPath: false },
+                    { id: "task-1-5", wbs: "1.5", title: "Campaign Opening Marketing Tiktok/IG", division: "Marketing", pic: "Atala Aminia", startDate: "2026-11-01", finishDate: "2026-11-25", progress: 0, cost: 15000000, approver: "Marketing Manager", attachments: [], criticalPath: false },
+                    { id: "task-1-6", wbs: "1.6", title: "Grand Opening & Handover Operasional", division: "Operational", pic: "Muhammad Tito", startDate: "2026-11-26", finishDate: "2026-11-30", progress: 0, cost: 8000000, approver: "Head Operational", attachments: [], criticalPath: true }
+                ],
+                risks: [
+                    { id: "R-1", desc: "Keterlambatan izin Pemda lokasi outlet", likelihood: 2, impact: 4, score: 8, mitigation: "Pendampingan tim legal lokal", owner: "Aji Sharijal", status: "Mitigated" },
+                    { id: "R-2", desc: "Suplai material kayu interior langka", likelihood: 3, impact: 3, score: 9, mitigation: "Gunakan supplier alternatif Bandung", owner: "Anis Fuad", status: "Open" }
+                ],
+                basts: [],
+                history: [
+                    { timestamp: "2026-10-01 08:00 WIB", user: "Aji Sharijal", action: "Proyek Dibuat", details: "Inisialisasi Proyek Pembukaan Outlet Soreang 2." }
+                ]
+            }
+        ];
+
+        window.CURRENT_PROJECT_ID = "proj-soreang";
+        window.CURRENT_TAB = 'gantt';
+        window.GANTT_SCALE = 'week';
+        window.GANTT_START = new Date("2026-08-31");
+        window.CHARTS_INSTANCES = {};
+        window.SIGNATURE_CANVAS = null;
+        window.TEMP_ATTACHMENTS = [];
+
+        window.saveProjectToFirebase = async function(proj) {
+            if (!window.MRI_FIREBASE || !window.MRI_FIREBASE.db) return;
+            try {
+                window.FIREBASE_QUOTA.writesCount += 1;
+                window.updateFirebaseQuotaUI("syncing");
+                const appId = window.MRI_FIREBASE.appId;
+                const docRef = window.MRI_FIREBASE.doc(window.MRI_FIREBASE.db, 'artifacts', appId, 'public', 'data', 'mri_multi_projects_v3', proj.id);
+                await window.MRI_FIREBASE.setDoc(docRef, proj);
+                window.updateFirebaseQuotaUI("live");
+            } catch(e) {
+                console.error("Firebase save project error:", e);
+                window.updateFirebaseQuotaUI("offline");
+            }
+        };
+
+        window.deleteProjectFromFirebase = async function(projId) {
+            if (!window.MRI_FIREBASE || !window.MRI_FIREBASE.db) return;
+            try {
+                window.FIREBASE_QUOTA.writesCount += 1;
+                window.updateFirebaseQuotaUI("syncing");
+                const appId = window.MRI_FIREBASE.appId;
+                const docRef = window.MRI_FIREBASE.doc(window.MRI_FIREBASE.db, 'artifacts', appId, 'public', 'data', 'mri_multi_projects_v3', projId);
+                await window.MRI_FIREBASE.deleteDoc(docRef);
+                window.updateFirebaseQuotaUI("live");
+            } catch(e) {
+                console.error("Firebase delete project error:", e);
+                window.updateFirebaseQuotaUI("offline");
+            }
+        };
+
+        window.saveTeamMemberToFirebase = async function(member) {
+            if (!window.MRI_FIREBASE || !window.MRI_FIREBASE.db) return;
+            try {
+                window.FIREBASE_QUOTA.writesCount += 1;
+                window.updateFirebaseQuotaUI("syncing");
+                const appId = window.MRI_FIREBASE.appId;
+                const memId = member.id || ('tm-' + Date.now());
+                member.id = memId;
+                const docRef = window.MRI_FIREBASE.doc(window.MRI_FIREBASE.db, 'artifacts', appId, 'public', 'data', 'mri_team_members', memId);
+                await window.MRI_FIREBASE.setDoc(docRef, member);
+                window.updateFirebaseQuotaUI("live");
+            } catch(e) {
+                console.error("Firebase save team member error:", e);
+                window.updateFirebaseQuotaUI("offline");
+            }
+        };
+
+        window.deleteTeamMemberFromFirebase = async function(memId) {
+            if (!window.MRI_FIREBASE || !window.MRI_FIREBASE.db) return;
+            try {
+                window.FIREBASE_QUOTA.writesCount += 1;
+                window.updateFirebaseQuotaUI("syncing");
+                const appId = window.MRI_FIREBASE.appId;
+                const docRef = window.MRI_FIREBASE.doc(window.MRI_FIREBASE.db, 'artifacts', appId, 'public', 'data', 'mri_team_members', memId);
+                await window.MRI_FIREBASE.deleteDoc(docRef);
+                window.updateFirebaseQuotaUI("live");
+            } catch(e) {
+                console.error("Firebase delete team member error:", e);
+                window.updateFirebaseQuotaUI("offline");
+            }
+        };
+
+        window.seedInitialFirebaseData = function() {
+            window.ALL_PROJECTS.forEach(proj => window.saveProjectToFirebase(proj));
+        };
+
+        window.seedInitialTeamData = function() {
+            window.TEAM_MEMBERS.forEach(mem => window.saveTeamMemberToFirebase(mem));
+        };
+
+        if (window.PENDING_SEED_PROJECTS) {
+            window.seedInitialFirebaseData();
+            delete window.PENDING_SEED_PROJECTS;
+        }
+        if (window.PENDING_SEED_TEAM) {
+            window.seedInitialTeamData();
+            delete window.PENDING_SEED_TEAM;
+        }
+
+        window.playFx = function(type = 'click') {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+
+                if (type === 'click') {
+                    osc.frequency.setValueAtTime(450, ctx.currentTime);
+                    gain.gain.setValueAtTime(0.04, ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.04);
+                    osc.start();
+                    osc.stop(ctx.currentTime + 0.04);
+                } else if (type === 'success') {
+                    osc.frequency.setValueAtTime(523.25, ctx.currentTime);
+                    osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.08);
+                    gain.gain.setValueAtTime(0.06, ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.22);
+                    osc.start();
+                    osc.stop(ctx.currentTime + 0.22);
+                }
+            } catch (e) {}
+        };
+
+        window.showToast = function(msg, type = 'success') {
+            window.playFx('success');
+            const container = document.getElementById('toast-container');
+            if (!container) return;
+            const bgClass = type === 'success' ? 'bg-emerald-600' : 'bg-rose-600';
+            const toast = document.createElement('div');
+            toast.className = `${bgClass} text-white text-xs font-bold px-4 py-3 rounded-2xl shadow-xl flex items-center gap-2 transform transition-all duration-300 translate-y-2 opacity-0 pointer-events-auto border border-white/20`;
+            toast.innerHTML = `<i class="fas fa-check-circle"></i> <span>${msg}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => toast.classList.remove('translate-y-2', 'opacity-0'), 10);
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-2');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        };
+
+        window.logProjectHistory = function(actionName, detailText) {
+            const proj = window.getActiveProject();
+            if (!proj) return;
+            if (!proj.history) proj.history = [];
+
+            const now = new Date();
+            const timeStr = `${now.toLocaleDateString('id-ID')} ${now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} WIB`;
+            proj.history.unshift({
+                timestamp: timeStr,
+                user: proj.pic || "System Operations",
+                action: actionName,
+                details: detailText
+            });
+        };
+
+        window.updateFirebaseQuotaUI = function(status) {
+            const dot = document.getElementById('fb-status-dot');
+            const txt = document.getElementById('fb-status-text');
+            const reads = document.getElementById('fb-reads-val');
+            const writes = document.getElementById('fb-writes-val');
+
+            if (reads) reads.innerText = window.FIREBASE_QUOTA.readsCount;
+            if (writes) writes.innerText = window.FIREBASE_QUOTA.writesCount;
+
+            if (status === 'live') {
+                if (dot) dot.className = "w-2 h-2 rounded-full bg-emerald-400 animate-pulse";
+                if (txt) { txt.innerText = "Firebase Live"; txt.className = "font-bold text-emerald-300"; }
+            } else if (status === 'syncing') {
+                if (dot) dot.className = "w-2 h-2 rounded-full bg-amber-400 animate-spin";
+                if (txt) { txt.innerText = "Syncing..."; txt.className = "font-bold text-amber-300"; }
+            } else {
+                if (dot) dot.className = "w-2 h-2 rounded-full bg-slate-400";
+                if (txt) { txt.innerText = "Offline Mode"; txt.className = "font-bold text-slate-300"; }
+            }
+        };
+
+        window.renderProjectSelectorOptions = function() {
+            const selector = document.getElementById('active-project-selector');
+            if (!selector) return;
+            selector.innerHTML = window.ALL_PROJECTS.map(p => `
+                <option value="${p.id}" ${p.id === window.CURRENT_PROJECT_ID ? 'selected' : ''}>
+                    ${p.wbs}. ${p.title} (${p.progress}%)
+                </option>
+            `).join('');
+        };
+
+        window.handleProjectSwitch = function(projId) {
+            window.playFx('click');
+            window.CURRENT_PROJECT_ID = projId;
+            window.refreshCurrentView();
+        };
+
+        window.getActiveProject = function() {
+            return window.ALL_PROJECTS.find(p => p.id === window.CURRENT_PROJECT_ID) || window.ALL_PROJECTS[0];
+        };
+
+        window.duplicateActiveProject = async function() {
+            window.playFx('click');
+            const currentProj = window.getActiveProject();
+            if (!currentProj) return;
+
+            const newProjId = 'proj-' + Date.now();
+            const newTitle = `${currentProj.title} (Salinan)`;
+            const newWbs = String(window.ALL_PROJECTS.length + 1);
+
+            const duplicatedProj = JSON.parse(JSON.stringify(currentProj));
+            duplicatedProj.id = newProjId;
+            duplicatedProj.title = newTitle;
+            duplicatedProj.wbs = newWbs;
+            duplicatedProj.autoBastGenerated = false;
+            duplicatedProj.basts = [];
+
+            if (duplicatedProj.subtasks) {
+                duplicatedProj.subtasks.forEach((sub, i) => {
+                    sub.id = `task-${Date.now()}-${i}`;
+                    sub.wbs = `${newWbs}.${i + 1}`;
+                });
+            }
+
+            window.ALL_PROJECTS.push(duplicatedProj);
+            window.CURRENT_PROJECT_ID = newProjId;
+
+            window.logProjectHistory("Duplikat Proyek", `Meduplikat proyek dari master "${currentProj.title}".`);
+            await window.saveProjectToFirebase(duplicatedProj);
+            window.refreshCurrentView();
+            window.showToast(`Proyek "${newTitle}" berhasil diduplikat & tersimpan di Firebase!`, "success");
+        };
+
+        window.switchTab = function(tabName) {
+            window.playFx('click');
+            window.CURRENT_TAB = tabName;
+            
+            const tabs = ['gantt', 'kanban', 'evm', 'history', 'raci', 'risks', 'budget', 'team', 'bast', 'ai'];
+            tabs.forEach(t => {
+                const btn = document.getElementById(`tab-btn-${t}`);
+                const view = document.getElementById(`view-${t}`);
+                if (btn && view) {
+                    if (t === tabName) {
+                        btn.className = "px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 bg-indigo-600 text-white font-black shadow-xs";
+                        view.classList.remove('hidden');
+                    } else {
+                        btn.className = "px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 text-slate-600 hover:bg-slate-100 font-bold";
+                        view.classList.add('hidden');
+                    }
+                }
+            });
+
+            const scaleControls = document.getElementById('gantt-scale-controls');
+            if (scaleControls) {
+                if (tabName === 'gantt') scaleControls.classList.remove('hidden');
+                else scaleControls.classList.add('hidden');
+            }
+
+            window.refreshCurrentView();
+        };
+
+        window.setGanttScale = function(scale) {
+            window.GANTT_SCALE = scale;
+            ['day', 'week', 'month'].forEach(s => {
+                const btn = document.getElementById(`scale-btn-${s}`);
+                if (btn) {
+                    if (s === scale) btn.className = "px-2.5 py-1 rounded-lg bg-indigo-600 text-white font-black shadow-xs transition-all";
+                    else btn.className = "px-2.5 py-1 rounded-lg text-slate-600 hover:text-slate-900 transition-all";
+                }
+            });
+            window.renderGanttChart();
+        };
+
+        window.handleTaskMediaUpload = function(e) {
+            const files = Array.from(e.target.files);
+            if (!files.length) return;
+
+            files.forEach(f => {
+                const reader = new FileReader();
+                reader.onload = function(evt) {
+                    const isVid = f.type.startsWith('video');
+                    const item = {
+                        id: 'att-' + Date.now() + '-' + Math.random().toString(36).substring(2, 5),
+                        name: f.name,
+                        type: isVid ? 'video' : 'image',
+                        dataUrl: evt.target.result,
+                        date: new Date().toLocaleDateString('id-ID')
+                    };
+                    window.TEMP_ATTACHMENTS.push(item);
+                    window.renderTempAttachmentsPreview();
+                };
+                reader.readAsDataURL(f);
+            });
+        };
+
+        window.renderTempAttachmentsPreview = function() {
+            const container = document.getElementById('task-attachments-preview');
+            if (!container) return;
+            container.innerHTML = window.TEMP_ATTACHMENTS.map((att, i) => `
+                <div class="relative group rounded-lg overflow-hidden border border-slate-300 bg-slate-900 h-14 flex items-center justify-center">
+                    ${att.type === 'image' 
+                        ? `<img src="${att.dataUrl}" class="w-full h-full object-cover">` 
+                        : `<i class="fas fa-video text-white text-lg"></i>`}
+                    <button type="button" onclick="window.removeTempAttachment(${i})" class="absolute top-0.5 right-0.5 bg-rose-600 text-white w-4 h-4 rounded-full text-[9px] flex items-center justify-center shadow">×</button>
+                </div>
+            `).join('');
+        };
+
+        window.removeTempAttachment = function(idx) {
+            window.TEMP_ATTACHMENTS.splice(idx, 1);
+            window.renderTempAttachmentsPreview();
+        };
+
+        window.openMediaViewer = function(title, type, url) {
+            const body = document.getElementById('media-modal-body');
+            const header = document.getElementById('media-modal-title');
+            if (header) header.innerText = title;
+
+            if (body) {
+                if (type === 'image') {
+                    body.innerHTML = `<img src="${url}" class="max-h-[70vh] object-contain w-full">`;
+                } else {
+                    body.innerHTML = `<video src="${url}" controls autoplay class="max-h-[70vh] w-full"></video>`;
+                }
+            }
+            document.getElementById('modal-media-viewer').classList.remove('hidden');
+        };
+
+        window.renderGanttChart = function() {
+            const tableRows = document.getElementById('gantt-table-rows');
+            const barsContainer = document.getElementById('gantt-bars-container');
+            const headerTop = document.getElementById('gantt-header-top');
+            const headerBottom = document.getElementById('gantt-header-bottom');
+            if (!tableRows || !barsContainer || !headerTop || !headerBottom) return;
+
+            const filterDiv = document.getElementById('filter-division-select')?.value || 'ALL';
+            const filterSearch = (document.getElementById('filter-search-input')?.value || '').toLowerCase().trim();
+            const proj = window.getActiveProject();
+
+            let colPx = window.GANTT_SCALE === 'day' ? 36 : window.GANTT_SCALE === 'week' ? 70 : 130;
+            let totalCols = window.GANTT_SCALE === 'day' ? 60 : window.GANTT_SCALE === 'week' ? 16 : 6;
+
+            let topHeaderHtml = '';
+            let bottomHeaderHtml = '';
+            let currDate = new Date(window.GANTT_START);
+            const dayNames = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
+            const monthNames = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agt", "Sep", "Okt", "Nov", "Des"];
+
+            for (let i = 0; i < totalCols; i++) {
+                const dayName = dayNames[currDate.getDay()];
+                const dateNum = currDate.getDate();
+                const monthName = monthNames[currDate.getMonth()];
+                const yearNum = currDate.getFullYear();
+
+                if (window.GANTT_SCALE === 'day') {
+                    topHeaderHtml += `<div style="width:${colPx}px" class="shrink-0 border-r border-slate-200 py-1 text-[9px] font-bold">${monthName} ${yearNum}</div>`;
+                    bottomHeaderHtml += `<div style="width:${colPx}px" class="shrink-0 border-r border-slate-200 py-1 text-[9px] font-mono">${dayName}, ${dateNum}</div>`;
+                    currDate.setDate(currDate.getDate() + 1);
+                } else if (window.GANTT_SCALE === 'week') {
+                    const endWeekDate = new Date(currDate);
+                    endWeekDate.setDate(endWeekDate.getDate() + 6);
+                    topHeaderHtml += `<div style="width:${colPx}px" class="shrink-0 border-r border-slate-200 py-1 text-[10px] font-black">${monthName} ${yearNum}</div>`;
+                    bottomHeaderHtml += `<div style="width:${colPx}px" class="shrink-0 border-r border-slate-200 py-1 text-[9px] font-mono">M${i+1}: ${dateNum}-${endWeekDate.getDate()} ${monthNames[endWeekDate.getMonth()]}</div>`;
+                    currDate.setDate(currDate.getDate() + 7);
+                } else {
+                    topHeaderHtml += `<div style="width:${colPx}px" class="shrink-0 border-r border-slate-200 py-1 text-[10px] font-black">Tahun ${yearNum}</div>`;
+                    bottomHeaderHtml += `<div style="width:${colPx}px" class="shrink-0 border-r border-slate-200 py-1.5 text-[10px] font-bold">${monthName} ${yearNum}</div>`;
+                    currDate.setMonth(currDate.getMonth() + 1);
+                }
+            }
+
+            headerTop.innerHTML = topHeaderHtml;
+            headerBottom.innerHTML = bottomHeaderHtml;
+
+            let tableHtml = '';
+            let barsHtml = '';
+
+            const projDivColor = window.getDivisionColor(proj.division);
+            const projWarn = window.getDueDateWarning(proj.finishDate, proj.progress);
+            const projWarnBadge = projWarn ? `<span class="${projWarn.class} ml-1">${projWarn.label}</span>` : '';
+
+            tableHtml += `
+                <div class="grid grid-cols-12 py-2 px-2 items-center bg-indigo-50/80 font-bold border-b border-indigo-100 text-indigo-950">
+                    <div class="col-span-1 text-center font-mono font-black">${proj.wbs}</div>
+                    <div class="col-span-4 px-2 font-black truncate flex items-center justify-between">
+                        <span class="truncate">${proj.title}</span>
+                        ${projWarnBadge}
+                    </div>
+                    <div class="col-span-2 text-center text-[10px]"><span class="${projDivColor.bg} ${projDivColor.text} ${projDivColor.border} border px-2 py-0.5 rounded font-black">${proj.division}</span></div>
+                    <div class="col-span-2 text-center text-[11px] font-bold truncate">${proj.pic}</div>
+                    <div class="col-span-1 text-center font-black text-indigo-800">${proj.progress}%</div>
+                    <div class="col-span-2 text-center flex items-center justify-center gap-1">
+                        <button onclick="window.duplicateActiveProject()" class="px-1.5 py-0.5 bg-amber-500 text-white rounded text-[10px] font-bold shadow-xs hover:bg-amber-600" title="Duplikat Proyek">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                        <button onclick="window.editActiveProjectPrompt()" class="px-1.5 py-0.5 bg-indigo-600 text-white rounded text-[10px] font-bold shadow-xs hover:bg-indigo-700" title="Edit Proyek">
+                            <i class="fas fa-pen"></i>
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            const pStart = new Date(proj.startDate);
+            const pFinish = new Date(proj.finishDate);
+            const daysFromStart = (pStart - window.GANTT_START) / (1000 * 3600 * 24);
+            const durationDays = (pFinish - pStart) / (1000 * 3600 * 24) + 1;
+
+            const dayPx = colPx / (window.GANTT_SCALE === 'day' ? 1 : window.GANTT_SCALE === 'week' ? 7 : 30);
+            const pLeftPx = Math.max(0, daysFromStart * dayPx);
+            const pWidthPx = Math.max(30, durationDays * dayPx);
+
+            let projBarClass = projDivColor.bar;
+            if (projWarn && projWarn.type === 'delayed') projBarClass = 'bg-rose-600 ring-2 ring-rose-400 animate-pulse';
+
+            barsHtml += `
+                <div class="h-[37px] flex items-center relative border-b border-indigo-100 bg-indigo-50/20">
+                    <div style="left: ${pLeftPx}px; width: ${pWidthPx}px;" class="absolute h-5 rounded-lg ${projBarClass} text-white text-[10px] font-black flex items-center justify-between px-2 shadow-xs">
+                        <span class="truncate">${proj.title}</span>
+                        <span>${proj.progress}%</span>
+                    </div>
+                </div>
+            `;
+
+            // Render Subtasks
+            (proj.subtasks || []).forEach(sub => {
+                if (filterDiv !== 'ALL' && sub.division !== filterDiv) return;
+                if (filterSearch && !sub.title.toLowerCase().includes(filterSearch) && !sub.pic.toLowerCase().includes(filterSearch)) return;
+
+                const divColor = window.getDivisionColor(sub.division);
+                const warnInfo = window.getDueDateWarning(sub.finishDate, sub.progress);
+                const warnBadge = warnInfo ? `<span class="${warnInfo.class}">${warnInfo.label}</span>` : `<span class="text-slate-400 font-mono text-[10px]">${sub.finishDate}</span>`;
+
+                const atts = sub.attachments || [];
+                const attsBadge = atts.length > 0 ? `
+                    <span class="ml-1 px-1 py-0.2 bg-slate-100 text-slate-700 rounded text-[9px] font-bold cursor-pointer hover:bg-slate-200" onclick="window.openMediaViewer('${sub.title.replace(/'/g, "\\'")}', '${atts[0].type}', '${atts[0].dataUrl}')">
+                        <i class="fas fa-paperclip text-indigo-600"></i> ${atts.length}
+                    </span>
+                ` : '';
+
+                const criticalBadge = sub.criticalPath ? `<span class="bg-rose-100 text-rose-700 border border-rose-300 px-1 py-0.2 rounded text-[8px] font-black ml-1">🔥 CRITICAL</span>` : '';
+
+                tableHtml += `
+                    <div class="grid grid-cols-12 py-1.5 px-2 items-center bg-white hover:bg-slate-50 text-slate-800 border-b border-slate-100">
+                        <div class="col-span-1 text-center font-mono text-slate-400 font-bold">${sub.wbs}</div>
+                        <div class="col-span-4 pl-2 truncate font-medium editable-cell flex items-center justify-between pr-1" ondblclick="window.inlineEditSubtask('${sub.id}', 'title')">
+                            <span class="truncate">${sub.title} ${criticalBadge}</span>
+                            ${attsBadge}
+                        </div>
+                        <div class="col-span-2 text-center text-[10px] truncate">
+                            <span class="${divColor.bg} ${divColor.text} ${divColor.border} border px-1.5 py-0.5 rounded font-bold">${sub.division}</span>
+                        </div>
+                        <div class="col-span-2 text-center text-[10px] truncate flex flex-col items-center justify-center">
+                            <span class="font-bold text-slate-800 truncate">${sub.pic}</span>
+                            ${warnBadge}
+                        </div>
+                        <div class="col-span-1 text-center font-bold editable-cell ${sub.progress === 100 ? 'text-emerald-600' : warnInfo && warnInfo.type === 'delayed' ? 'text-rose-600 font-black' : 'text-blue-600'}" ondblclick="window.inlineEditSubtask('${sub.id}', 'progress')">${sub.progress}%</div>
+                        <div class="col-span-2 text-center flex items-center justify-center gap-1">
+                            <button onclick="window.editTaskPrompt('${sub.id}')" class="px-1.5 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded text-[10px] font-bold" title="Edit Subtask">
+                                <i class="fas fa-pen"></i>
+                            </button>
+                            <button onclick="window.deleteTaskPrompt('${sub.id}')" class="px-1.5 py-0.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded text-[10px] font-bold" title="Hapus Subtask">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+
+                const sStart = new Date(sub.startDate);
+                const sFinish = new Date(sub.finishDate);
+                const sDaysStart = (sStart - window.GANTT_START) / (1000 * 3600 * 24);
+                const sDuration = (sFinish - sStart) / (1000 * 3600 * 24) + 1;
+
+                const sLeftPx = Math.max(0, sDaysStart * dayPx);
+                const sWidthPx = Math.max(20, sDuration * dayPx);
+
+                let barBg = divColor.bar;
+                if (sub.progress === 100) barBg = "bg-emerald-600";
+                if (warnInfo) {
+                    if (warnInfo.type === 'delayed') barBg = "bg-rose-600 ring-2 ring-rose-400 animate-pulse";
+                    else if (warnInfo.type === 'due_today') barBg = "bg-amber-500 ring-2 ring-amber-300";
+                }
+
+                barsHtml += `
+                    <div class="h-[33px] flex items-center relative border-b border-slate-100">
+                        <div onclick="window.editTaskPrompt('${sub.id}')" style="left: ${sLeftPx}px; width: ${sWidthPx}px;" class="absolute h-4 rounded-md ${barBg} text-white text-[9px] font-bold flex items-center justify-between px-2 shadow-xs cursor-pointer transition-all">
+                            <span class="truncate">${warnInfo && warnInfo.type === 'delayed' ? '🚨 ' : ''}${sub.title}</span>
+                            <span>${sub.progress}%</span>
+                        </div>
+                    </div>
+                `;
+            });
+
+            tableRows.innerHTML = tableHtml || `<div class="p-8 text-center text-slate-400 font-bold">Tidak ada subtask terdaftar.</div>`;
+            barsContainer.innerHTML = barsHtml;
+        };
+
+        window.exportA4PdfOrPng = function(format = 'pdf') {
+            window.playFx('click');
+            window.showToast(`Mempersiapkan dokumen ${format.toUpperCase()} Fit A4...`, 'success');
+
+            const area = document.getElementById('printable-a4-area');
+            if (!area) return;
+
+            html2canvas(area, {
+                scale: 2,
+                useCORS: true,
+                logging: false,
+                backgroundColor: '#f1f5f9'
+            }).then(canvas => {
+                const imgData = canvas.toDataURL('image/png');
+
+                if (format === 'png') {
+                    const link = document.createElement('a');
+                    link.download = `MRI_Project_Report_${Date.now()}.png`;
+                    link.href = imgData;
+                    link.click();
+                    window.showToast("File PNG berhasil diunduh!", "success");
+                } else {
+                    const { jsPDF } = window.jspdf;
+                    const pdf = new jsPDF({
+                        orientation: 'landscape',
+                        unit: 'mm',
+                        format: 'a4'
+                    });
+
+                    const imgProps = pdf.getImageProperties(imgData);
+                    const pdfWidth = pdf.internal.pageSize.getWidth();
+                    const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+
+                    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+                    pdf.save(`MRI_Project_Planner_${window.getActiveProject().title.replace(/ /g, '_')}.pdf`);
+                    window.showToast("File PDF A4 rapih berhasil diunduh!", "success");
+                }
+            }).catch(err => {
+                window.showToast("Error saat mengunduh dokumen A4.", "error");
+            });
+        };
+
+        window.renderProjectHistory = function() {
+            const container = document.getElementById('project-history-list');
+            if (!container) return;
+            const proj = window.getActiveProject();
+            if (!proj || !proj.history || proj.history.length === 0) {
+                container.innerHTML = `<div class="p-8 text-center text-slate-400 font-bold">Belum ada histori aktivitas tercatat.</div>`;
+                return;
+            }
+            container.innerHTML = proj.history.map(item => `
+                <div class="bg-white p-2.5 rounded-xl border border-slate-200 text-xs shadow-xs space-y-1">
+                    <div class="flex items-center justify-between text-[10px] text-slate-500">
+                        <span class="font-bold text-indigo-600"><i class="fas fa-history"></i> ${item.action}</span>
+                        <span class="font-mono">${item.timestamp}</span>
+                    </div>
+                    <p class="font-semibold text-slate-800">${item.details}</p>
+                    <div class="text-[10px] text-slate-400">Oleh: ${item.user}</div>
+                </div>
+            `).join('');
+        };
+
+        window.populatePicDropdown = function(selectId, selectedValue = '') {
+            const selectEl = document.getElementById(selectId);
+            if (!selectEl) return;
+
+            const members = window.TEAM_MEMBERS || [];
+            let optionsHtml = '';
+
+            if (members.length === 0) {
+                optionsHtml = `<option value="">Belum ada SDM terdaftar</option>`;
+            } else {
+                optionsHtml = members.map(m => `
+                    <option value="${m.name}" ${m.name === selectedValue ? 'selected' : ''}>
+                        ${m.name} (${m.role} - ${m.division.replace('Human Resources Development (HRD)', 'HRD')})
+                    </option>
+                `).join('');
+            }
+
+            if (selectedValue && !members.some(m => m.name === selectedValue)) {
+                optionsHtml = `<option value="${selectedValue}" selected>${selectedValue} (Kustom)</option>` + optionsHtml;
+            }
+
+            selectEl.innerHTML = optionsHtml;
+        };
+
+        window.openAddTaskModal = function() {
+            window.TEMP_ATTACHMENTS = [];
+            document.getElementById('form-task-id').value = '';
+            document.getElementById('form-task-title').value = '';
+            window.populatePicDropdown('form-task-pic', '');
+            document.getElementById('form-task-start').value = new Date().toISOString().split('T')[0];
+            document.getElementById('form-task-finish').value = new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0];
+            document.getElementById('form-task-progress').value = 0;
+            document.getElementById('form-task-cost').value = '';
+            document.getElementById('task-attachments-preview').innerHTML = '';
+            document.getElementById('modal-task-header-title').innerHTML = `<i class="fas fa-tasks text-indigo-600"></i> Tambah Sub-Pekerjaan Baru`;
+            document.getElementById('modal-task').classList.remove('hidden');
+        };
+
+        window.editTaskPrompt = function(taskId) {
+            const proj = window.getActiveProject();
+            const sub = (proj.subtasks || []).find(s => s.id === taskId);
+            if (!sub) return;
+
+            window.TEMP_ATTACHMENTS = sub.attachments || [];
+            document.getElementById('form-task-id').value = sub.id;
+            document.getElementById('form-task-title').value = sub.title;
+            document.getElementById('form-task-division').value = sub.division;
+            window.populatePicDropdown('form-task-pic', sub.pic);
+            document.getElementById('form-task-start').value = sub.startDate;
+            document.getElementById('form-task-finish').value = sub.finishDate;
+            document.getElementById('form-task-progress').value = sub.progress;
+            document.getElementById('form-task-cost').value = sub.cost || '';
+            window.renderTempAttachmentsPreview();
+            document.getElementById('modal-task-header-title').innerHTML = `<i class="fas fa-pen text-indigo-600"></i> Edit Sub-Pekerjaan`;
+            document.getElementById('modal-task').classList.remove('hidden');
+        };
+
+        window.closeTaskModal = function() { document.getElementById('modal-task').classList.add('hidden'); };
+
+        window.handleSaveTask = async function(e) {
+            if (e) e.preventDefault();
+            const proj = window.getActiveProject();
+            const taskId = document.getElementById('form-task-id').value;
+            const title = document.getElementById('form-task-title').value;
+            const division = document.getElementById('form-task-division').value;
+            const pic = document.getElementById('form-task-pic').value;
+            const startDate = document.getElementById('form-task-start').value;
+            const finishDate = document.getElementById('form-task-finish').value;
+            const progress = parseInt(document.getElementById('form-task-progress').value) || 0;
+            const costVal = document.getElementById('form-task-cost').value;
+            const cost = costVal !== '' ? parseFloat(costVal) || 0 : 0;
+
+            if (taskId) {
+                const sub = proj.subtasks.find(s => s.id === taskId);
+                if (sub) {
+                    sub.title = title; sub.division = division; sub.pic = pic;
+                    sub.startDate = startDate; sub.finishDate = finishDate;
+                    sub.progress = progress; sub.cost = cost;
+                    sub.attachments = window.TEMP_ATTACHMENTS;
+                }
+                window.logProjectHistory("Update Subtask", `Memperbarui subtask "${title}" (Progress: ${progress}%).`);
+            } else {
+                const newSub = {
+                    id: 'task-' + Date.now(),
+                    wbs: `${proj.wbs}.${proj.subtasks.length + 1}`,
+                    title, division, pic, startDate, finishDate, progress, cost,
+                    attachments: window.TEMP_ATTACHMENTS, criticalPath: false
+                };
+                proj.subtasks.push(newSub);
+                window.logProjectHistory("Tambah Subtask", `Menambahkan subtask baru "${title}" ber-PIC ${pic}.`);
+            }
+
+            window.closeTaskModal();
+            window.recalculateProjectProgress(proj);
+            await window.saveProjectToFirebase(proj);
+            window.refreshCurrentView();
+            window.showToast("Sub-pekerjaan tersimpan ke Firebase!", "success");
+        };
+
+        window.openAddProjectModal = function() {
+            document.getElementById('form-proj-id').value = '';
+            document.getElementById('form-proj-title').value = '';
+            document.getElementById('form-proj-start').value = '2026-09-01';
+            document.getElementById('form-proj-finish').value = '2026-11-30';
+            window.populatePicDropdown('form-proj-pic', '');
+            document.getElementById('form-proj-budget').value = '';
+            document.getElementById('modal-project-header-title').innerHTML = `<i class="fas fa-folder-plus text-indigo-600"></i> Buat Proyek Utama Baru`;
+            document.getElementById('modal-project').classList.remove('hidden');
+        };
+
+        window.editProjectPrompt = function(projId) {
+            const proj = window.ALL_PROJECTS.find(p => p.id === projId);
+            if (!proj) return;
+
+            document.getElementById('form-proj-id').value = proj.id;
+            document.getElementById('form-proj-title').value = proj.title;
+            document.getElementById('form-proj-start').value = proj.startDate;
+            document.getElementById('form-proj-finish').value = proj.finishDate;
+            document.getElementById('form-proj-division').value = proj.division;
+            window.populatePicDropdown('form-proj-pic', proj.pic);
+            document.getElementById('form-proj-budget').value = proj.budget || '';
+            document.getElementById('modal-project-header-title').innerHTML = `<i class="fas fa-pen text-indigo-600"></i> Edit Data Proyek Utama`;
+            document.getElementById('modal-project').classList.remove('hidden');
+        };
+
+        window.editActiveProjectPrompt = function() {
+            window.editProjectPrompt(window.CURRENT_PROJECT_ID);
+        };
+
+        window.closeProjectModal = function() { document.getElementById('modal-project').classList.add('hidden'); };
+
+        window.handleSaveProject = async function(e) {
+            if (e) e.preventDefault();
+            const id = document.getElementById('form-proj-id').value;
+            const title = document.getElementById('form-proj-title').value;
+            const startDate = document.getElementById('form-proj-start').value;
+            const finishDate = document.getElementById('form-proj-finish').value;
+            const division = document.getElementById('form-proj-division').value;
+            const pic = document.getElementById('form-proj-pic').value;
+            const budgetVal = document.getElementById('form-proj-budget').value;
+            const budget = budgetVal !== '' ? parseFloat(budgetVal) || 0 : 0;
+
+            let targetProj;
+            if (id) {
+                targetProj = window.ALL_PROJECTS.find(p => p.id === id);
+                if (targetProj) {
+                    targetProj.title = title; targetProj.startDate = startDate; targetProj.finishDate = finishDate;
+                    targetProj.division = division; targetProj.pic = pic; targetProj.budget = budget;
+                }
+                window.logProjectHistory("Edit Master Proyek", `Memperbarui data proyek master "${title}".`);
+            } else {
+                targetProj = {
+                    id: 'proj-' + Date.now(),
+                    wbs: String(window.ALL_PROJECTS.length + 1),
+                    title, startDate, finishDate, division, pic, budget,
+                    progress: 0, autoBastGenerated: false, subtasks: [], risks: [], basts: [], history: []
+                };
+                window.ALL_PROJECTS.push(targetProj);
+                window.CURRENT_PROJECT_ID = targetProj.id;
+                window.logProjectHistory("Proyek Dibuat", `Membuat proyek master baru "${title}".`);
+            }
+
+            window.closeProjectModal();
+            await window.saveProjectToFirebase(targetProj);
+            window.refreshCurrentView();
+            window.showToast("Data Proyek tersimpan ke Firebase!", "success");
+        };
+
+        window.sendSubtaskWhatsAppReport = function(taskId, newStage) {
+            const proj = window.getActiveProject();
+            const sub = (proj.subtasks || []).find(s => s.id === taskId);
+            if (!sub) return;
+
+            let phone = "+6285720755426";
+            const matchedMember = window.TEAM_MEMBERS.find(m => m.name.toLowerCase().includes(sub.pic.toLowerCase()) || sub.pic.toLowerCase().includes(m.name.toLowerCase()));
+            if (matchedMember && matchedMember.phone) phone = matchedMember.phone;
+            const cleanPhone = phone.replace(/[^0-9]/g, '');
+
+            const msg = `*UPDATE PROYEK PT MINUM REMPAH INDONESIA*\n\n📌 *Proyek*: ${proj.title}\n📝 *Subtask*: ${sub.title}\n👤 *PIC*: ${sub.pic}\n🏢 *Divisi*: ${sub.division}\n📊 *Tahap Kanban*: ${newStage}\n📈 *Progres*: ${sub.progress}%\n📅 *Target Finish*: ${sub.finishDate}\n\nMohon untuk ditindaklanjuti. Terima kasih!`;
+            
+            const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
+            window.open(waUrl, '_blank');
+        };
+
+        window.sendExecutiveWhatsAppReport = function() {
+            const proj = window.getActiveProject();
+            if (!proj) return;
+
+            const health = window.calculateProjectHealthStatus(proj);
+            const totalTasks = (proj.subtasks || []).length;
+            const completedTasks = (proj.subtasks || []).filter(s => s.progress === 100).length;
+
+            const msg = `*REKAPITULASI EKSEKUTIF PROYEK MRI PLANNER*\n\n🏗️ *Proyek*: ${proj.title}\n📌 *WBS*: ${proj.wbs}\n👨‍💼 *PIC Lead*: ${proj.pic} (${proj.division})\n\n📊 *STATUS KESEHATAN*: ${health.statusLabel}\n📈 *Overall Progress*: ${proj.progress}%\n✅ *Subtask Tuntas*: ${completedTasks} dari ${totalTasks}\n🚨 *Delay Subtask*: ${health.delayedCount} Task\n💰 *Total RAB*: Rp ${(proj.budget || 0).toLocaleString('id-ID')}\n📅 *Target Baseline Finish*: ${proj.finishDate}\n📅 *Proyeksi Selesai*: ${health.forecastFinishStr}\n\n_Sistem MRI Project Planner PT Minum Rempah Indonesia_`;
+
+            const waUrl = `https://wa.me/?text=${encodeURIComponent(msg)}`;
+            window.open(waUrl, '_blank');
+        };
+
+        window.renderKanbanBoard = function() {
+            const proj = window.getActiveProject();
+            const colTodo = document.getElementById('kanban-col-todo');
+            const colProg = document.getElementById('kanban-col-progress');
+            const colRev = document.getElementById('kanban-col-review');
+            const colComp = document.getElementById('kanban-col-completed');
+            if (!colTodo || !colProg || !colRev || !colComp) return;
+
+            colTodo.innerHTML = ''; colProg.innerHTML = ''; colRev.innerHTML = ''; colComp.innerHTML = '';
+
+            let cTodo = 0, cProg = 0, cRev = 0, cComp = 0;
+
+            (proj.subtasks || []).forEach(sub => {
+                let status = 'todo';
+                if (sub.progress === 100) status = 'completed';
+                else if (sub.progress > 80) status = 'review';
+                else if (sub.progress > 0) status = 'progress';
+
+                const divColor = window.getDivisionColor(sub.division);
+                const warnInfo = window.getDueDateWarning(sub.finishDate, sub.progress);
+                const warnBadge = warnInfo ? `<div class="mt-1">${warnInfo.label}</div>` : '';
+
+                const card = document.createElement('div');
+                card.className = `bg-white p-2.5 rounded-xl border ${warnInfo && warnInfo.type === 'delayed' ? 'border-rose-400 bg-rose-50/20' : 'border-slate-200'} shadow-xs space-y-1.5 hover:border-indigo-400 transition-all`;
+                card.innerHTML = `
+                    <div class="flex items-center justify-between text-[10px]">
+                        <span class="font-mono text-slate-400 font-bold">${sub.wbs}</span>
+                        <span class="${divColor.bg} ${divColor.text} ${divColor.border} font-bold px-1.5 py-0.2 rounded border">${sub.division}</span>
+                    </div>
+                    <h4 class="font-bold text-xs text-slate-900 leading-snug">${sub.title}</h4>
+                    ${warnBadge}
+                    <div class="flex items-center justify-between text-[11px] pt-1 border-t border-slate-100">
+                        <span class="text-indigo-700 font-extrabold"><i class="far fa-user"></i> ${sub.pic}</span>
+                        <span class="font-mono font-black ${sub.progress === 100 ? 'text-emerald-600' : 'text-blue-600'}">${sub.progress}%</span>
+                    </div>
+                    <div class="flex items-center gap-1 pt-1">
+                        ${status !== 'todo' ? `<button onclick="window.moveKanbanTask('${sub.id}', 'down')" class="flex-1 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold rounded-lg transition-all">← Prev</button>` : ''}
+                        <button onclick="window.sendSubtaskWhatsAppReport('${sub.id}', '${status.toUpperCase()}')" class="p-1 px-2 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 rounded-lg text-[10px] font-bold" title="Kirim Laporan WA ke PIC">
+                            <i class="fab fa-whatsapp"></i>
+                        </button>
+                        ${status !== 'completed' ? `<button onclick="window.moveKanbanTask('${sub.id}', 'up')" class="flex-1 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold rounded-lg shadow-xs transition-all">Next →</button>` : ''}
+                    </div>
+                `;
+
+                if (status === 'todo') { colTodo.appendChild(card); cTodo++; }
+                else if (status === 'progress') { colProg.appendChild(card); cProg++; }
+                else if (status === 'review') { colRev.appendChild(card); cRev++; }
+                else if (status === 'completed') { colComp.appendChild(card); cComp++; }
+            });
+
+            document.getElementById('kanban-count-todo').innerText = cTodo;
+            document.getElementById('kanban-count-progress').innerText = cProg;
+            document.getElementById('kanban-count-review').innerText = cRev;
+            document.getElementById('kanban-count-completed').innerText = cComp;
+        };
+
+        window.moveKanbanTask = async function(taskId, dir) {
+            const proj = window.getActiveProject();
+            const sub = (proj.subtasks || []).find(s => s.id === taskId);
+            if (!sub) return;
+
+            let newStage = "TO DO";
+
+            if (dir === 'up') {
+                if (sub.progress === 0) { sub.progress = 50; newStage = "IN PROGRESS"; }
+                else if (sub.progress <= 80) { sub.progress = 90; newStage = "REVIEW / QC"; }
+                else { sub.progress = 100; newStage = "COMPLETED (BAST)"; }
+            } else {
+                if (sub.progress === 100) { sub.progress = 85; newStage = "REVIEW / QC"; }
+                else if (sub.progress > 80) { sub.progress = 50; newStage = "IN PROGRESS"; }
+                else { sub.progress = 0; newStage = "TO DO"; }
+            }
+
+            window.logProjectHistory("Perubahan Kanban", `Memindahkan status subtask "${sub.title}" menjadi ${newStage} (${sub.progress}%).`);
+            window.recalculateProjectProgress(proj);
+            await window.saveProjectToFirebase(proj);
+            window.refreshCurrentView();
+            window.showToast(`Status subtask "${sub.title}" diperbarui ke ${newStage}!`, "success");
+
+            window.sendSubtaskWhatsAppReport(taskId, newStage);
+        };
+
+        window.calculateProjectHealthStatus = function(proj) {
+            if (!proj) return { statusLabel: "N/A", delayedCount: 0, forecastFinishStr: "--" };
+
+            const subtasks = proj.subtasks || [];
+            const totalTasks = subtasks.length;
+            const completedTasks = subtasks.filter(s => s.progress === 100).length;
+
+            let delayedCount = 0;
+            let dueSoonCount = 0;
+
+            subtasks.forEach(s => {
+                const warn = window.getDueDateWarning(s.finishDate, s.progress);
+                if (warn) {
+                    if (warn.type === 'delayed') delayedCount++;
+                    else if (warn.type === 'due_today' || warn.type === 'due_soon') dueSoonCount++;
+                }
+            });
+
+            const today = new Date();
+            const start = new Date(proj.startDate);
+            const finish = new Date(proj.finishDate);
+            const totalDays = Math.max(1, (finish - start) / (1000 * 3600 * 24));
+            const elapsedDays = Math.max(0, (today - start) / (1000 * 3600 * 24));
+            let plannedRatio = Math.min(100, Math.max(0, Math.round((elapsedDays / totalDays) * 100)));
+
+            const actualProgress = proj.progress || 0;
+            const spi = plannedRatio > 0 ? (actualProgress / plannedRatio).toFixed(2) : "1.00";
+
+            let forecastFinish = new Date(finish);
+            if (parseFloat(spi) > 0 && parseFloat(spi) < 1.0) {
+                const extraDays = Math.round((totalDays / parseFloat(spi)) - totalDays);
+                forecastFinish.setDate(forecastFinish.getDate() + extraDays);
+            }
+
+            const forecastFinishStr = `${forecastFinish.getDate()} ${["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agt","Sep","Okt","Nov","Des"][forecastFinish.getMonth()]} ${forecastFinish.getFullYear()}`;
+
+            let statusType = "ON_TRACK";
+            let statusLabel = "ON TRACK 🟢";
+            let statusDesc = "Progres sesuai jadwal baseline";
+
+            if (actualProgress === 100) {
+                statusType = "COMPLETED";
+                statusLabel = "SELESAI 100% 🏆";
+                statusDesc = "Dokumen BAST Siap / Diterbitkan";
+            } else if (delayedCount > 0 || actualProgress < (plannedRatio - 10)) {
+                statusType = "DELAYED";
+                statusLabel = "TERLAMBAT 🚨";
+                statusDesc = `${delayedCount} Task Delay dari target`;
+            } else if (actualProgress > (plannedRatio + 10)) {
+                statusType = "AHEAD";
+                statusLabel = "LEBIH CEPAT 🚀";
+                statusDesc = "Pengerjaan melampaui target schedule";
+            }
+
+            return {
+                statusType,
+                statusLabel,
+                statusDesc,
+                plannedRatio,
+                actualProgress,
+                delayedCount,
+                dueSoonCount,
+                completedTasks,
+                totalTasks,
+                spi,
+                forecastFinishStr
+            };
+        };
+
+        window.renderTeamDirectory = function() {
+            const grid = document.getElementById('team-cards-grid');
+            if (!grid) return;
+
+            const filterDiv = document.getElementById('team-filter-div')?.value || 'ALL';
+            const search = (document.getElementById('team-search-input')?.value || '').toLowerCase().trim();
+
+            let count = 0;
+            let html = '';
+
+            (window.TEAM_MEMBERS || []).forEach((m, idx) => {
+                if (filterDiv !== 'ALL' && m.division !== filterDiv) return;
+                if (search && !m.name.toLowerCase().includes(search) && !m.role.toLowerCase().includes(search) && !m.email.toLowerCase().includes(search)) return;
+
+                count++;
+                const cleanPhone = (m.phone || '').replace(/[^0-9]/g, '');
+                const divColor = window.getDivisionColor(m.division);
+
+                html += `
+                    <div class="bg-white p-3 rounded-2xl border border-slate-200 shadow-xs hover:border-indigo-400 transition-all flex flex-col justify-between space-y-2">
+                        <div class="flex items-start justify-between gap-2 border-b border-slate-100 pb-2">
+                            <div class="flex items-center gap-2">
+                                <div class="w-8 h-8 rounded-xl ${divColor.bg} ${divColor.text} flex items-center justify-center font-black text-xs shrink-0 ring-2 ring-slate-100">
+                                    ${m.name.split(' ').map(n=>n[0]).slice(0,2).join('')}
+                                </div>
+                                <div>
+                                    <h4 class="font-extrabold text-xs text-slate-900 leading-tight">${m.name}</h4>
+                                    <span class="text-[10px] text-slate-500 font-semibold block">${m.role}</span>
+                                </div>
+                            </div>
+                            <span class="${divColor.bg} ${divColor.text} ${divColor.border} px-1.5 py-0.2 rounded text-[9px] font-black border shrink-0">
+                                ${m.division.replace('Human Resources Development (HRD)', 'HRD')}
+                            </span>
+                        </div>
+
+                        <div class="space-y-1 text-[11px] font-medium text-slate-600">
+                            <div class="flex items-center justify-between">
+                                <span class="text-slate-400">Email:</span>
+                                <a href="mailto:${m.email}" class="text-indigo-600 font-bold hover:underline truncate max-w-[170px]">${m.email}</a>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-slate-400">WhatsApp:</span>
+                                <a href="https://wa.me/${cleanPhone}" target="_blank" class="text-emerald-600 font-mono font-bold hover:underline flex items-center gap-1">
+                                    <i class="fab fa-whatsapp"></i> ${m.phone}
+                                </a>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center justify-end gap-1.5 pt-1 border-t border-slate-100">
+                            <button onclick="window.editTeamMemberPrompt('${m.id || idx}')" class="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold rounded">
+                                <i class="fas fa-pen text-indigo-600"></i> Edit
+                            </button>
+                            <button onclick="window.deleteTeamMemberPrompt('${m.id || idx}')" class="px-2 py-0.5 bg-rose-50 hover:bg-rose-100 text-rose-600 text-[10px] font-bold rounded">
+                                <i class="fas fa-trash"></i> Hapus
+                            </button>
+                        </div>
+                    </div>
+                `;
+            });
+
+            grid.innerHTML = html || `<div class="col-span-full p-8 text-center text-slate-400 font-bold">Tidak ada personel yang sesuai filter.</div>`;
+            const badgeCount = document.getElementById('team-total-count-badge');
+            if (badgeCount) badgeCount.innerText = `Total: ${count} Personel`;
+        };
+
+        window.openAddTeamModal = function() {
+            document.getElementById('form-team-id').value = '';
+            document.getElementById('form-team-name').value = '';
+            document.getElementById('form-team-role').value = '';
+            document.getElementById('form-team-email').value = '';
+            document.getElementById('form-team-phone').value = '+628';
+            document.getElementById('modal-team-title').innerText = "Tambah Anggota Tim SDM";
+            document.getElementById('modal-team').classList.remove('hidden');
+        };
+
+        window.editTeamMemberPrompt = function(idOrIdx) {
+            const m = window.TEAM_MEMBERS.find(tm => tm.id === idOrIdx) || window.TEAM_MEMBERS[idOrIdx];
+            if (!m) return;
+            document.getElementById('form-team-id').value = m.id || idOrIdx;
+            document.getElementById('form-team-name').value = m.name;
+            document.getElementById('form-team-role').value = m.role;
+            document.getElementById('form-team-division').value = m.division;
+            document.getElementById('form-team-email').value = m.email;
+            document.getElementById('form-team-phone').value = m.phone;
+            document.getElementById('modal-team-title').innerText = "Edit Data Personel SDM";
+            document.getElementById('modal-team').classList.remove('hidden');
+        };
+
+        window.handleSaveTeamMember = async function(e) {
+            if (e) e.preventDefault();
+            const id = document.getElementById('form-team-id').value;
+            const name = document.getElementById('form-team-name').value;
+            const role = document.getElementById('form-team-role').value;
+            const division = document.getElementById('form-team-division').value;
+            const email = document.getElementById('form-team-email').value;
+            const phone = document.getElementById('form-team-phone').value;
+
+            const record = { id: id || ('tm-' + Date.now()), name, role, division, email, phone };
+            if (id) {
+                const idx = window.TEAM_MEMBERS.findIndex(tm => tm.id === id);
+                if (idx !== -1) window.TEAM_MEMBERS[idx] = record;
+                else window.TEAM_MEMBERS.push(record);
+            } else {
+                window.TEAM_MEMBERS.push(record);
+            }
+
+            document.getElementById('modal-team').classList.add('hidden');
+            await window.saveTeamMemberToFirebase(record);
+            window.renderTeamDirectory();
+            window.showToast("Data personel tersimpan ke Firebase!", "success");
+        };
+
+        window.renderEVMAndSCurve = function() {
+            const proj = window.getActiveProject();
+            const bac = proj.budget || 0;
+            const avgProgress = proj.progress / 100;
+
+            const ev = bac * avgProgress;
+            const pv = bac * 0.6; 
+            const ac = (proj.subtasks || []).reduce((sum, s) => sum + (s.cost || 0) * (s.progress / 100), 0);
+            const spi = pv > 0 ? (ev / pv).toFixed(2) : "1.00";
+            const cpi = ac > 0 ? (ev / ac).toFixed(2) : "1.00";
+            const eac = parseFloat(cpi) > 0 ? bac / parseFloat(cpi) : bac;
+
+            document.getElementById('evm-pv').innerText = `Rp ${Math.round(pv).toLocaleString('id-ID')}`;
+            document.getElementById('evm-ev').innerText = `Rp ${Math.round(ev).toLocaleString('id-ID')}`;
+            document.getElementById('evm-ac').innerText = `Rp ${Math.round(ac).toLocaleString('id-ID')}`;
+            document.getElementById('evm-eac').innerText = `Rp ${Math.round(eac).toLocaleString('id-ID')}`;
+
+            document.getElementById('stat-spi-val').innerText = spi;
+            document.getElementById('stat-cpi-val').innerText = cpi;
+
+            const ctx = document.getElementById('chart-s-curve');
+            if (ctx) {
+                if (window.CHARTS_INSTANCES.scurve) window.CHARTS_INSTANCES.scurve.destroy();
+                window.CHARTS_INSTANCES.scurve = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8'],
+                        datasets: [
+                            { label: 'Planned Progress (S-Baseline)', data: [10, 25, 45, 65, 80, 90, 98, 100], borderColor: '#6366f1', tension: 0.4 },
+                            { label: 'Actual Progress Physical', data: [8, 20, 38, proj.progress], borderColor: '#10b981', tension: 0.4, borderWidth: 3 }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: { y: { min: 0, max: 100 } }
+                    }
+                });
+            }
+        };
+
+        window.renderRaciAndWorkload = function() {
+            const proj = window.getActiveProject();
+            const tbody = document.getElementById('raci-table-body');
+            if (!tbody) return;
+
+            let html = '';
+            (proj.subtasks || []).forEach(s => {
+                const divColor = window.getDivisionColor(s.division);
+                html += `
+                    <tr class="hover:bg-slate-50 text-slate-800">
+                        <td class="p-2 font-mono text-slate-400 font-bold">${s.wbs}</td>
+                        <td class="p-2 font-medium">${s.title}</td>
+                        <td class="p-2"><span class="${divColor.bg} ${divColor.text} ${divColor.border} border px-1.5 py-0.5 rounded font-bold">${s.division}</span></td>
+                        <td class="p-2 font-bold text-indigo-700">${s.pic}</td>
+                        <td class="p-2 text-slate-600">${s.approver || 'Manager Lead'}</td>
+                    </tr>
+                `;
+            });
+            tbody.innerHTML = html || `<tr><td colspan="5" class="p-4 text-center text-slate-400">Tidak ada subtask.</td></tr>`;
+
+            const picMap = {};
+            window.ALL_PROJECTS.forEach(p => {
+                (p.subtasks || []).forEach(s => {
+                    picMap[s.pic] = (picMap[s.pic] || 0) + 1;
+                });
+            });
+
+            const ctx = document.getElementById('chart-resource-workload');
+            if (ctx) {
+                if (window.CHARTS_INSTANCES.workload) window.CHARTS_INSTANCES.workload.destroy();
+                window.CHARTS_INSTANCES.workload = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: Object.keys(picMap),
+                        datasets: [{
+                            label: 'Jumlah Subtask Diserahkan',
+                            data: Object.values(picMap),
+                            backgroundColor: '#9333ea',
+                            borderRadius: 8
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: { y: { beginAtZero: true } }
+                    }
+                });
+            }
+        };
+
+        window.renderRiskRegister = function() {
+            const proj = window.getActiveProject();
+            const tbody = document.getElementById('risk-table-body');
+            if (!tbody) return;
+
+            let html = '';
+            (proj.risks || []).forEach(r => {
+                let scoreBadge = "bg-amber-100 text-amber-800 border-amber-200";
+                if (r.score >= 12) scoreBadge = "bg-rose-100 text-rose-800 border-rose-200 font-black";
+
+                html += `
+                    <tr class="hover:bg-slate-50 text-slate-800">
+                        <td class="p-2.5 font-mono font-bold text-rose-600">${r.id}</td>
+                        <td class="p-2.5 font-bold">${r.desc}</td>
+                        <td class="p-2.5 text-center font-mono">${r.likelihood}</td>
+                        <td class="p-2.5 text-center font-mono">${r.impact}</td>
+                        <td class="p-2.5 text-center"><span class="${scoreBadge} px-2 py-0.5 rounded border text-xs font-mono">${r.score}</span></td>
+                        <td class="p-2.5 text-slate-600">${r.mitigation}</td>
+                        <td class="p-2.5 font-bold text-indigo-700">${r.owner}</td>
+                        <td class="p-2.5"><span class="bg-slate-100 text-slate-800 px-2 py-0.5 rounded text-[10px] font-bold border border-slate-200">${r.status}</span></td>
+                    </tr>
+                `;
+            });
+            tbody.innerHTML = html || `<tr><td colspan="8" class="p-4 text-center text-slate-400 font-bold">Belum ada catatan risiko terdaftar.</td></tr>`;
+        };
+
+        window.renderBudgetTable = function() {
+            const tbody = document.getElementById('budget-table-body');
+            if (!tbody) return;
+            let html = '';
+
+            const proj = window.getActiveProject();
+            const totalCost = (proj.subtasks || []).reduce((sum, s) => sum + (s.cost || 0), 0);
+            const variance = (proj.budget || 0) - totalCost;
+            const projDivColor = window.getDivisionColor(proj.division);
+
+            html += `
+                <tr class="bg-indigo-50/80 font-bold text-slate-900 border-b border-indigo-100">
+                    <td class="p-2.5 font-mono text-indigo-700">${proj.wbs}</td>
+                    <td class="p-2.5 uppercase font-black">${proj.title}</td>
+                    <td class="p-2.5"><span class="${projDivColor.bg} ${projDivColor.text} ${projDivColor.border} border px-2 py-0.5 rounded text-[10px]">${proj.division}</span></td>
+                    <td class="p-2.5">${proj.pic}</td>
+                    <td class="p-2.5 text-right font-mono text-indigo-700">Rp ${(proj.budget || 0).toLocaleString('id-ID')}</td>
+                    <td class="p-2.5 text-right font-mono text-emerald-700">Rp ${totalCost.toLocaleString('id-ID')}</td>
+                    <td class="p-2.5 text-right font-mono ${variance >= 0 ? 'text-emerald-700' : 'text-rose-600'}">Rp ${variance.toLocaleString('id-ID')}</td>
+                </tr>
+            `;
+
+            (proj.subtasks || []).forEach(sub => {
+                const subDivColor = window.getDivisionColor(sub.division);
+                html += `
+                    <tr class="bg-white hover:bg-slate-50 text-slate-700 text-xs">
+                        <td class="p-2.5 pl-6 font-mono text-slate-400">${sub.wbs}</td>
+                        <td class="p-2.5 pl-8">${sub.title}</td>
+                        <td class="p-2.5"><span class="${subDivColor.bg} ${subDivColor.text} ${subDivColor.border} border px-1.5 py-0.5 rounded text-[10px]">${sub.division}</span></td>
+                        <td class="p-2.5">${sub.pic}</td>
+                        <td class="p-2.5 text-right font-mono text-slate-400">-</td>
+                        <td class="p-2.5 text-right font-mono text-slate-800">Rp ${(sub.cost || 0).toLocaleString('id-ID')}</td>
+                        <td class="p-2.5 text-right font-mono text-slate-400">-</td>
+                    </tr>
+                `;
+            });
+            tbody.innerHTML = html;
+        };
+
+        window.renderBastArchive = function() {
+            const grid = document.getElementById('bast-documents-grid');
+            if (!grid) return;
+            grid.innerHTML = '';
+
+            const proj = window.getActiveProject();
+            const basts = proj.basts || [];
+
+            if (basts.length === 0) {
+                grid.innerHTML = `
+                    <div class="col-span-full p-8 text-center bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+                        <i class="fas fa-file-circle-xmark text-slate-300 text-3xl"></i>
+                        <p class="font-bold text-xs text-slate-600">Belum ada dokumen BAST resmi terbit untuk proyek ini.</p>
+                        <p class="text-[11px] text-slate-400">Selesaikan seluruh subtask hingga 100% untuk penerbitan BAST Otomatis.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            basts.forEach((b, idx) => {
+                const card = document.createElement('div');
+                card.className = "bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs space-y-2.5 hover:border-emerald-500 transition-all";
+                card.innerHTML = `
+                    <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+                        <span class="font-mono font-bold text-xs text-emerald-700">${b.num}</span>
+                        <span class="bg-emerald-50 text-emerald-800 px-2 py-0.5 rounded text-[10px] font-bold border border-emerald-200">Terbit Resmi</span>
+                    </div>
+                    <div>
+                        <h4 class="font-black text-xs text-slate-900">${proj.title}</h4>
+                        <p class="text-[10px] text-slate-500">Tanggal Handover: ${b.date}</p>
+                    </div>
+                    <div class="p-2 bg-slate-50 rounded-xl border border-slate-100 text-[10px] space-y-1">
+                        <p><strong>Pihak 1:</strong> ${b.p1Name} (${b.p1Role})</p>
+                        <p><strong>Pihak 2:</strong> ${b.p2Name} (${b.p2Role})</p>
+                    </div>
+                    <button onclick="window.previewBastDocument(${idx})" class="w-full py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5">
+                        <i class="fas fa-print"></i> Lihat & Cetak BAST
+                    </button>
+                `;
+                grid.appendChild(card);
+            });
+        };
+
+        window.initSignaturePad = function() {
+            const canvas = document.getElementById('signature-pad');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            let drawing = false;
+            window.SIGNATURE_CANVAS = canvas;
+
+            function getPos(e) {
+                const rect = canvas.getBoundingClientRect();
+                return {
+                    x: (e.touches ? e.touches[0].clientX : e.clientX) - rect.left,
+                    y: (e.touches ? e.touches[0].clientY : e.clientY) - rect.top
+                };
+            }
+
+            function startDraw(e) {
+                drawing = true;
+                const pos = getPos(e);
+                ctx.beginPath();
+                ctx.moveTo(pos.x, pos.y);
+            }
+
+            function draw(e) {
+                if (!drawing) return;
+                const pos = getPos(e);
+                ctx.lineWidth = 2;
+                ctx.lineCap = 'round';
+                ctx.strokeStyle = '#1e1b4b';
+                ctx.lineTo(pos.x, pos.y);
+                ctx.stroke();
+            }
+
+            function stopDraw() { drawing = false; }
+
+            canvas.addEventListener('mousedown', startDraw);
+            canvas.addEventListener('mousemove', draw);
+            canvas.addEventListener('mouseup', stopDraw);
+            canvas.addEventListener('touchstart', startDraw);
+            canvas.addEventListener('touchmove', draw);
+            canvas.addEventListener('touchend', stopDraw);
+        };
+
+        window.clearSignature = function() {
+            if (window.SIGNATURE_CANVAS) {
+                const ctx = window.SIGNATURE_CANVAS.getContext('2d');
+                ctx.clearRect(0, 0, window.SIGNATURE_CANVAS.width, window.SIGNATURE_CANVAS.height);
+            }
+        };
+
+        window.openBastModal = function() {
+            const proj = window.getActiveProject();
+            document.getElementById('bast-doc-num').value = `BAST/MRI/2026/10/${Math.floor(100 + Math.random() * 900)}`;
+            document.getElementById('bast-doc-date').value = new Date().toISOString().split('T')[0];
+            document.getElementById('bast-party1-name').value = proj.pic;
+            document.getElementById('bast-party1-role').value = `${proj.division} Lead Manager`;
+            document.getElementById('bast-party2-name').value = "Muhammad Tito Rochmana";
+            document.getElementById('bast-party2-role').value = "Head of Operational Outlets";
+            
+            const completedList = (proj.subtasks || []).filter(s => s.progress === 100).map(s => `- ${s.title} (PIC: ${s.pic})`).join('\n');
+            document.getElementById('bast-deliverables').value = completedList || `- Pembentukan & Pengerjaan Fisik Proyek ${proj.title} tuntas 100%.`;
+
+            document.getElementById('modal-bast-generator').classList.remove('hidden');
+            setTimeout(window.initSignaturePad, 100);
+        };
+
+        window.handleGenerateBast = async function(e) {
+            if (e) e.preventDefault();
+            const proj = window.getActiveProject();
+
+            const num = document.getElementById('bast-doc-num').value;
+            const date = document.getElementById('bast-doc-date').value;
+            const p1Name = document.getElementById('bast-party1-name').value;
+            const p1Role = document.getElementById('bast-party1-role').value;
+            const p2Name = document.getElementById('bast-party2-name').value;
+            const p2Role = document.getElementById('bast-party2-role').value;
+            const deliverables = document.getElementById('bast-deliverables').value;
+            const sigData = window.SIGNATURE_CANVAS ? window.SIGNATURE_CANVAS.toDataURL() : '';
+
+            const bastRecord = { num, date, p1Name, p1Role, p2Name, p2Role, deliverables, sigData };
+            if (!proj.basts) proj.basts = [];
+            proj.basts.push(bastRecord);
+
+            window.logProjectHistory("BAST Diterbitkan", `Penerbitan resmi dokumen BAST #${num}.`);
+            document.getElementById('modal-bast-generator').classList.add('hidden');
+            await window.saveProjectToFirebase(proj);
+            window.refreshCurrentView();
+            window.showToast("Berita Acara Serah Terima (BAST) Berhasil Diterbitkan!", "success");
+            window.previewBastDocument(proj.basts.length - 1);
+        };
+
+        window.previewBastDocument = function(index) {
+            const proj = window.getActiveProject();
+            const b = (proj.basts || [])[index];
+            if (!b) return;
+
+            document.getElementById('preview-bast-id').innerText = `BAST-MRI-${index + 1001}`;
+            document.getElementById('preview-bast-num').innerText = b.num;
+            document.getElementById('preview-bast-date').innerText = b.date;
+            document.getElementById('preview-bast-p1-name').innerText = b.p1Name;
+            document.getElementById('preview-bast-p1-role').innerText = b.p1Role;
+            document.getElementById('preview-bast-p2-name').innerText = b.p2Name;
+            document.getElementById('preview-bast-p2-role').innerText = b.p2Role;
+            document.getElementById('preview-bast-project-title').innerText = proj.title;
+            document.getElementById('preview-bast-deliverables-list').innerText = b.deliverables;
+            document.getElementById('preview-p1-sig-name').innerText = b.p1Name;
+            document.getElementById('preview-p2-sig-name').innerText = b.p2Name;
+
+            const sigImg = document.getElementById('preview-p1-sig-img');
+            if (b.sigData) {
+                sigImg.src = b.sigData;
+                sigImg.classList.remove('hidden');
+            } else {
+                sigImg.classList.add('hidden');
+            }
+            document.getElementById('modal-bast-view').classList.remove('hidden');
+        };
+
+        window.printBastDoc = function() { window.print(); };
+
+        window.recalculateProjectProgress = function(proj) {
+            if (proj.subtasks && proj.subtasks.length > 0) {
+                const avg = Math.round(proj.subtasks.reduce((a, b) => a + b.progress, 0) / proj.subtasks.length);
+                proj.progress = avg;
+
+                if (avg === 100 && !proj.autoBastGenerated) {
+                    proj.autoBastGenerated = true;
+                    const autoBastNum = `BAST/AUTO/MRI/2026/${Math.floor(1000 + Math.random() * 9000)}`;
+                    const deliverablesTxt = proj.subtasks.map(s => `- ${s.title} (PIC: ${s.pic} - DONE)`).join('\n');
+                    
+                    if (!proj.basts) proj.basts = [];
+                    proj.basts.push({
+                        num: autoBastNum,
+                        date: new Date().toISOString().split('T')[0],
+                        p1Name: proj.pic,
+                        p1Role: `${proj.division} Manager Lead`,
+                        p2Name: "Muhammad Tito Rochmana",
+                        p2Role: "Head of Operations",
+                        deliverables: deliverablesTxt,
+                        sigData: ''
+                    });
+
+                    window.logProjectHistory("AUTO BAST TERBIT", `Proyek tuntas 100%! Dokumen BAST Otomatis diterbitkan #${autoBastNum}.`);
+                    setTimeout(() => {
+                        window.showToast("🎉 PROYEK SELESAI 100%! Dokumen BAST Otomatis Diterbitkan & Tersimpan di Firebase!", "success");
+                    }, 500);
+                }
+            }
+        };
+
+        window.refreshCurrentView = function() {
+            window.renderProjectSelectorOptions();
+            window.updateMetricStats();
+            
+            if (window.CURRENT_TAB === 'gantt') window.renderGanttChart();
+            else if (window.CURRENT_TAB === 'kanban') window.renderKanbanBoard();
+            else if (window.CURRENT_TAB === 'evm') window.renderEVMAndSCurve();
+            else if (window.CURRENT_TAB === 'history') window.renderProjectHistory();
+            else if (window.CURRENT_TAB === 'raci') window.renderRaciAndWorkload();
+            else if (window.CURRENT_TAB === 'risks') window.renderRiskRegister();
+            else if (window.CURRENT_TAB === 'budget') window.renderBudgetTable();
+            else if (window.CURRENT_TAB === 'team') window.renderTeamDirectory();
+            else if (window.CURRENT_TAB === 'bast') window.renderBastArchive();
+        };
+
+        window.exportGanttToExcel = function() {
+            const proj = window.getActiveProject();
+            let exportData = [
+                ["WBS", "Pekerjaan / Task Title", "Divisi", "PIC Lead", "Tanggal Mulai", "Target Finish", "Progres (%)", "Realisasi Biaya (Rp)"]
+            ];
+            exportData.push([proj.wbs, proj.title, proj.division, proj.pic, proj.startDate, proj.finishDate, proj.progress, proj.budget || 0]);
+            (proj.subtasks || []).forEach(sub => {
+                exportData.push([sub.wbs, `  -- ${sub.title}`, sub.division, sub.pic, sub.startDate, sub.finishDate, sub.progress, sub.cost || 0]);
+            });
+
+            const ws = XLSX.utils.aoa_to_sheet(exportData);
+            ws['!cols'] = [{ wch: 8 }, { wch: 45 }, { wch: 20 }, { wch: 25 }, { wch: 15 }, { wch: 15 }, { wch: 12 }, { wch: 20 }];
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "MRI_Project_Timeline");
+            XLSX.writeFile(wb, `Project_Timeline_${proj.title.replace(/ /g, '_')}.xlsx`);
+            window.showToast("File Excel berhasil diunduh!", "success");
+        };
+
+        window.showCustomDialog = function(options) {
+            return new Promise((resolve) => {
+                const dialog = document.getElementById('modal-custom-dialog');
+                const titleEl = document.getElementById('custom-dialog-title');
+                const msgEl = document.getElementById('custom-dialog-message');
+                const iconEl = document.getElementById('custom-dialog-icon');
+                const inputWrap = document.getElementById('custom-dialog-input-wrap');
+                const inputEl = document.getElementById('custom-dialog-input');
+                const btnCancel = document.getElementById('custom-dialog-btn-cancel');
+                const btnConfirm = document.getElementById('custom-dialog-btn-confirm');
+
+                if (!dialog) return resolve(null);
+
+                titleEl.innerText = options.title || 'Konfirmasi';
+                msgEl.innerText = options.message || 'Apakah Anda yakin?';
+                iconEl.className = options.icon || 'fas fa-question-circle text-indigo-600 text-sm';
+
+                if (options.isPrompt) {
+                    inputWrap.classList.remove('hidden');
+                    inputEl.value = options.defaultValue || '';
+                } else {
+                    inputWrap.classList.add('hidden');
+                }
+
+                if (options.danger) {
+                    btnConfirm.className = "flex-1 py-2 bg-rose-600 text-white font-black text-xs rounded-xl shadow-xs hover:bg-rose-700";
+                } else {
+                    btnConfirm.className = "flex-1 py-2 bg-indigo-600 text-white font-black text-xs rounded-xl shadow-xs hover:bg-indigo-700";
+                }
+
+                dialog.classList.remove('hidden');
+
+                const cleanup = () => {
+                    dialog.classList.add('hidden');
+                    btnConfirm.onclick = null;
+                    btnCancel.onclick = null;
+                };
+
+                btnCancel.onclick = () => {
+                    cleanup();
+                    resolve(null);
+                };
+
+                btnConfirm.onclick = () => {
+                    const val = options.isPrompt ? inputEl.value : true;
+                    cleanup();
+                    resolve(val);
+                };
+            });
+        };
+
+        window.updateMetricStats = function() {
+            const proj = window.getActiveProject();
+            if (!proj) return;
+
+            const health = window.calculateProjectHealthStatus(proj);
+
+            const cardHealth = document.getElementById('card-health-status');
+            const healthTitle = document.getElementById('health-status-title');
+            const healthDesc = document.getElementById('health-status-desc');
+            const healthPlanAct = document.getElementById('health-plan-vs-act');
+            const healthIcon = document.getElementById('health-status-icon');
+
+            if (healthTitle && healthDesc && healthPlanAct) {
+                healthTitle.innerText = health.statusLabel;
+                healthDesc.innerText = health.statusDesc;
+                healthPlanAct.innerText = `${health.plannedRatio}% Plan / ${health.actualProgress}% Actual`;
+
+                if (health.statusType === 'DELAYED') {
+                    if (cardHealth) cardHealth.className = "glass-card p-3 rounded-2xl flex flex-col justify-between border-l-4 border-rose-500 shadow-xs bg-rose-50/20";
+                    if (healthIcon) healthIcon.className = "fas fa-triangle-exclamation text-rose-600 text-sm animate-pulse";
+                    healthTitle.className = "text-sm sm:text-base font-black text-rose-700 flex items-center gap-1.5";
+                } else if (health.statusType === 'AHEAD') {
+                    if (cardHealth) cardHealth.className = "glass-card p-3 rounded-2xl flex flex-col justify-between border-l-4 border-blue-500 shadow-xs bg-blue-50/20";
+                    if (healthIcon) healthIcon.className = "fas fa-rocket text-blue-600 text-sm";
+                    healthTitle.className = "text-sm sm:text-base font-black text-blue-700 flex items-center gap-1.5";
+                } else {
+                    if (cardHealth) cardHealth.className = "glass-card p-3 rounded-2xl flex flex-col justify-between border-l-4 border-emerald-500 shadow-xs";
+                    if (healthIcon) healthIcon.className = "fas fa-shield-heart text-emerald-600 text-sm";
+                    healthTitle.className = "text-sm sm:text-base font-black text-emerald-700 flex items-center gap-1.5";
+                }
+            }
+
+            const delayCountEl = document.getElementById('card-delay-count');
+            const delaySubtext = document.getElementById('card-delay-subtext');
+            const dueSoonEl = document.getElementById('card-due-soon-count');
+            if (delayCountEl && delaySubtext && dueSoonEl) {
+                delayCountEl.innerText = `${health.delayedCount} Task`;
+                delaySubtext.innerText = health.delayedCount > 0 ? `🚨 ${health.delayedCount} subtask terdeteksi delay!` : "Semua subtask tepat waktu";
+                dueSoonEl.innerText = `${health.dueSoonCount} Task`;
+            }
+
+            const doneRatio = document.getElementById('card-subtask-done-ratio');
+            const bastStatusText = document.getElementById('card-bast-status-text');
+            const overallProgVal = document.getElementById('card-overall-progress-val');
+            if (doneRatio && bastStatusText && overallProgVal) {
+                doneRatio.innerText = `${health.completedTasks} / ${health.totalTasks}`;
+                bastStatusText.innerText = proj.progress === 100 ? "Proyek Tuntas 100% (BAST Ready)" : `${health.totalTasks - health.completedTasks} subtask lagi menuju BAST`;
+                overallProgVal.innerText = `${proj.progress}%`;
+            }
+
+            const forecastDateEl = document.getElementById('card-forecast-date');
+            const forecastVarEl = document.getElementById('card-forecast-variance');
+            const spiBadgeEl = document.getElementById('card-spi-badge');
+            if (forecastDateEl && forecastVarEl && spiBadgeEl) {
+                forecastDateEl.innerText = health.forecastFinishStr;
+                forecastVarEl.innerText = `Baseline: ${proj.finishDate}`;
+                spiBadgeEl.innerText = health.spi;
+            }
+
+            const totalCost = (proj.subtasks || []).reduce((sum, s) => sum + (s.cost || 0), 0);
+            const variance = (proj.budget || 0) - totalCost;
+            const budgetRealizationEl = document.getElementById('card-budget-realization');
+            const budgetVarianceEl = document.getElementById('card-budget-variance');
+            if (budgetRealizationEl && budgetVarianceEl) {
+                budgetRealizationEl.innerText = `Rp ${totalCost.toLocaleString('id-ID')}`;
+                budgetVarianceEl.innerText = `Sisa RAB: Rp ${variance.toLocaleString('id-ID')}`;
+            }
+
+            document.getElementById('stat-project-progress').innerText = `${proj.progress}%`;
+            document.getElementById('stat-total-budget').innerText = `Rp ${(proj.budget || 0).toLocaleString('id-ID')}`;
+
+            const delayPill = document.getElementById('project-delay-pill');
+            const delayText = document.getElementById('project-delay-text');
+            if (delayPill && delayText) {
+                if (health.delayedCount > 0) {
+                    delayPill.classList.remove('hidden');
+                    delayPill.className = "hidden md:flex items-center gap-1.5 bg-rose-100 border border-rose-300 text-rose-900 px-3 py-1 rounded-full text-xs font-black animate-pulse shadow-xs";
+                    delayText.innerText = `${health.delayedCount} Subtask DELAY!`;
+                } else if (health.dueSoonCount > 0) {
+                    delayPill.classList.remove('hidden');
+                    delayPill.className = "hidden md:flex items-center gap-1.5 bg-amber-100 border border-amber-300 text-amber-900 px-3 py-1 rounded-full text-xs font-black shadow-xs";
+                    delayText.innerText = `${health.dueSoonCount} Task Due Segera`;
+                } else {
+                    delayPill.classList.add('hidden');
+                }
+            }
+
+            const pill = document.getElementById('bast-status-pill');
+            const pillText = document.getElementById('bast-status-text');
+            if (pill && pillText) {
+                if (proj.progress === 100) {
+                    pill.className = "hidden md:flex items-center gap-2 bg-emerald-100 border border-emerald-300 text-emerald-900 px-3 py-1 rounded-full text-xs font-black animate-pulse";
+                    pillText.innerText = "PROYEK TUNTAS 100% (AUTO BAST TERBIT)";
+                } else {
+                    pill.className = "hidden md:flex items-center gap-2 bg-indigo-50 border border-indigo-200 text-indigo-800 px-3 py-1 rounded-full text-xs font-bold";
+                    pillText.innerText = `${health.completedTasks} Subtask Done (Siap Handover BAST)`;
+                }
+            }
+        };
+
+        window.clearProjectHistory = async function() {
+            const proj = window.getActiveProject();
+            const confirmed = await window.showCustomDialog({
+                title: "Bersihkan History Log",
+                message: `Yakin ingin membersihkan seluruh histori log proyek "${proj.title}"?`,
+                icon: "fas fa-trash-alt text-rose-600 text-sm",
+                danger: true
+            });
+
+            if (confirmed) {
+                proj.history = [];
+                window.renderProjectHistory();
+                await window.saveProjectToFirebase(proj);
+                window.showToast("Histori log dibersihkan.", "success");
+            }
+        };
+
+        window.deleteTaskPrompt = async function(taskId) {
+            const proj = window.getActiveProject();
+            const idx = (proj.subtasks || []).findIndex(s => s.id === taskId);
+            if (idx === -1) return;
+
+            const confirmed = await window.showCustomDialog({
+                title: "Hapus Sub-Pekerjaan",
+                message: `Yakin ingin menghapus subtask "${proj.subtasks[idx].title}"? Data akan terhapus permanen dari Firebase.`,
+                icon: "fas fa-trash-alt text-rose-600 text-sm",
+                danger: true
+            });
+
+            if (confirmed) {
+                const removedTitle = proj.subtasks[idx].title;
+                proj.subtasks.splice(idx, 1);
+                window.logProjectHistory("Hapus Subtask", `Menghapus subtask "${removedTitle}".`);
+                window.recalculateProjectProgress(proj);
+                await window.saveProjectToFirebase(proj);
+                window.refreshCurrentView();
+                window.showToast("Sub-pekerjaan berhasil dihapus dari Firebase!", "success");
+            }
+        };
+
+        window.deleteActiveProjectPrompt = async function() {
+            const proj = window.getActiveProject();
+
+            const confirmed = await window.showCustomDialog({
+                title: "Hapus Proyek Utama",
+                message: `Yakin ingin menghapus seluruh Proyek Utama: "${proj.title}" beserta seluruh sub-pekerjaannya secara permanen dari Firebase?`,
+                icon: "fas fa-dumpster text-rose-600 text-sm",
+                danger: true
+            });
+
+            if (confirmed) {
+                const deletedId = proj.id;
+                window.ALL_PROJECTS = window.ALL_PROJECTS.filter(p => p.id !== deletedId);
+                await window.deleteProjectFromFirebase(deletedId);
+
+                if (window.ALL_PROJECTS.length === 0) {
+                    const newProj = {
+                        id: 'proj-' + Date.now(),
+                        wbs: "1",
+                        title: "Proyek Baru",
+                        startDate: new Date().toISOString().split('T')[0],
+                        finishDate: new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+                        division: "Project",
+                        pic: "Project Manager",
+                        budget: 0,
+                        progress: 0,
+                        autoBastGenerated: false,
+                        subtasks: [],
+                        risks: [],
+                        basts: [],
+                        history: [
+                            {
+                                timestamp: `${new Date().toLocaleDateString('id-ID')} ${new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} WIB`,
+                                user: "System",
+                                action: "Proyek Dibuat",
+                                details: "Inisialisasi proyek baru setelah penghapusan."
+                            }
+                        ]
+                    };
+                    window.ALL_PROJECTS.push(newProj);
+                    await window.saveProjectToFirebase(newProj);
+                }
+
+                window.CURRENT_PROJECT_ID = window.ALL_PROJECTS[0].id;
+                window.refreshCurrentView();
+                window.showToast("Proyek Utama berhasil dihapus dari Firebase!", "success");
+            }
+        };
+
+        window.deleteTeamMemberPrompt = async function(idOrIdx) {
+            const m = window.TEAM_MEMBERS.find(tm => tm.id === idOrIdx) || window.TEAM_MEMBERS[idOrIdx];
+            if (!m) return;
+
+            const confirmed = await window.showCustomDialog({
+                title: "Hapus Personel SDM",
+                message: `Yakin ingin menghapus ${m.name} (${m.role}) dari Firebase?`,
+                icon: "fas fa-user-minus text-rose-600 text-sm",
+                danger: true
+            });
+
+            if (confirmed) {
+                window.TEAM_MEMBERS = window.TEAM_MEMBERS.filter(tm => tm.id !== m.id);
+                await window.deleteTeamMemberFromFirebase(m.id);
+                window.renderTeamDirectory();
+                window.showToast("Personel berhasil dihapus dari Firebase!", "success");
+            }
+        };
+
+        window.openAddRiskModal = async function() {
+            const desc = await window.showCustomDialog({
+                title: "Potensi Risiko Baru",
+                message: "Masukkan Deskripsi Potensi Risiko yang mungkin mempengaruhi jadwal/biaya:",
+                isPrompt: true,
+                defaultValue: "Keterlambatan material impor"
+            });
+            if (!desc) return;
+
+            const owner = await window.showCustomDialog({
+                title: "Risk Owner (PIC)",
+                message: "Nama PIC Penanggung Jawab Mitigasi Risiko:",
+                isPrompt: true,
+                defaultValue: "Aji Sharijal"
+            }) || "Aji Sharijal";
+
+            const proj = window.getActiveProject();
+            if (!proj.risks) proj.risks = [];
+            proj.risks.push({
+                id: `R-${proj.risks.length + 1}`,
+                desc, likelihood: 3, impact: 3, score: 9,
+                mitigation: "Pendampingan mitigasi taktis oleh tim legal & GA", owner, status: "Open"
+            });
+
+            window.logProjectHistory("Tambah Risiko", `Menambahkan catatan risiko "${desc}".`);
+            await window.saveProjectToFirebase(proj);
+            window.refreshCurrentView();
+            window.showToast("Risiko baru tersimpan ke Firebase!", "success");
+        };
+
+        window.inlineEditSubtask = async function(taskId, field) {
+            const proj = window.getActiveProject();
+            const sub = (proj.subtasks || []).find(s => s.id === taskId);
+            if (!sub) return;
+
+            if (field === 'progress') {
+                const newProg = await window.showCustomDialog({
+                    title: "Update Progres Subtask",
+                    message: `Masukkan nilai progres (0-100) untuk subtask: "${sub.title}"`,
+                    isPrompt: true,
+                    defaultValue: String(sub.progress)
+                });
+
+                if (newProg !== null && newProg !== undefined) {
+                    const parsed = parseInt(newProg);
+                    if (!isNaN(parsed) && parsed >= 0 && parsed <= 100) {
+                        sub.progress = parsed;
+                        window.logProjectHistory("Update Inline Progres", `Memperbarui progres "${sub.title}" menjadi ${parsed}%.`);
+                        window.recalculateProjectProgress(proj);
+                        await window.saveProjectToFirebase(proj);
+                        window.refreshCurrentView();
+                        window.showToast("Progres berhasil tersimpan ke Firebase!", "success");
+                    }
+                }
+            } else if (field === 'title') {
+                const newTitle = await window.showCustomDialog({
+                    title: "Ubah Judul Subtask",
+                    message: "Ubah Nama / Judul Pekerjaan:",
+                    isPrompt: true,
+                    defaultValue: sub.title
+                });
+
+                if (newTitle) {
+                    sub.title = newTitle.trim();
+                    window.logProjectHistory("Update Subtask Title", `Mengubah judul subtask menjadi "${sub.title}".`);
+                    await window.saveProjectToFirebase(proj);
+                    window.refreshCurrentView();
+                    window.showToast("Judul pekerjaan tersimpan ke Firebase!", "success");
+                }
+            }
+        };
+
+        window.runAutoWBSGeneratorPrompt = async function() {
+            window.switchTab('ai');
+            const userGoal = await window.showCustomDialog({
+                title: "AI Auto-WBS Generator",
+                message: "Masukkan Nama Proyek Baru yang ingin dibuatkan WBS & RAB-nya:",
+                isPrompt: true,
+                defaultValue: "Pembukaan Outlet New Soreang 2"
+            });
+            if (!userGoal) return;
+
+            const schema = {
+                type: "OBJECT",
+                properties: {
+                    projectTitle: { type: "STRING" },
+                    estimatedBudget: { type: "NUMBER" },
+                    subtasks: {
+                        type: "ARRAY",
+                        items: {
+                            type: "OBJECT",
+                            properties: {
+                                wbs: { type: "STRING" },
+                                title: { type: "STRING" },
+                                division: { type: "STRING" },
+                                pic: { type: "STRING" },
+                                durationDays: { type: "NUMBER" },
+                                costEstimate: { type: "NUMBER" }
+                            }
+                        }
+                    }
+                }
+            };
+            const promptText = `Susun struktur WBS lengkap, subtask, estimasi hari, dan alokasi divisi untuk proyek berikut: ${userGoal}`;
+            window.callGeminiAPI(promptText, null, schema);
+        };
+
+        window.runAIGroundedSearchBenchmark = async function() {
+            window.switchTab('ai');
+            const query = await window.showCustomDialog({
+                title: "Market Benchmark Search",
+                message: "Masukkan kata kunci benchmark harga vendor atau regulasi:",
+                isPrompt: true,
+                defaultValue: "Estimasi biaya renovasi interior bar barista cafe per m2 di Bandung 2026"
+            });
+            if (!query) return;
+            window.callGeminiAPI(query, [{ "google_search": {} }]);
+        };
+
+        window.runAIMeetingNotesToTasks = async function() {
+            window.switchTab('ai');
+            const notes = await window.showCustomDialog({
+                title: "Notulensi ke Task AI",
+                message: "Tempel Notulensi Rapat / Catatan Diskusi WhatsApp di bawah ini:",
+                isPrompt: true,
+                defaultValue: "Rapat kemarin: Aji urus izin Pemda sampai 15 Okt, Mutiara siapkan mesin boiler CK budget 100jt, Pak Tito handle grand opening."
+            });
+            if (!notes) return;
+            const promptText = `Ekstrak dan susun daftar Subtask aksi dari notulensi rapat berikut:\n${notes}`;
+            window.callGeminiAPI(promptText);
+        };
+
+        window.runAIAudit = function() {
+            window.switchTab('ai');
+            const proj = window.getActiveProject();
+            const promptText = `Lakukan Audit Risiko Delay & Evaluasi Progres Eksekutif untuk proyek MRI Planner berikut:\n${JSON.stringify(proj)}\n\nSebutkan:\n1. Subtask mana yang paling rentan mengalami delay / bottleneck.\n2. Potensi hambatan antar divisi.\n3. 3 Rekomendasi tindakan taktis manajerial minggu ini.`;
+            window.callGeminiAPI(promptText);
+        };
+
+        window.callGeminiAPI = function(promptText, tools = null, responseSchema = null) {
+            const spinner = document.getElementById('ai-loading-spinner');
+            const output = document.getElementById('ai-output-content');
+            if (spinner) spinner.classList.remove('hidden');
+            if (output) output.innerText = '';
+
+            const apiKey = ""; 
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+            const payload = {
+                contents: [{ parts: [{ text: promptText }] }],
+                systemInstruction: {
+                    parts: [{ text: "Anda adalah Enterprise Project Operations AI untuk PT Minum Rempah Indonesia. Berikan analisis mendalam, terstruktur, profesional, dan siap pakai dalam bahasa Indonesia." }]
+                }
+            };
+
+            if (tools) payload.tools = tools;
+            if (responseSchema) {
+                payload.generationConfig = {
+                    responseMimeType: "application/json",
+                    responseSchema: responseSchema
+                };
+            }
+
+            fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (spinner) spinner.classList.add('hidden');
+                const candidate = data?.candidates?.[0];
+                const text = candidate?.content?.parts?.[0]?.text || "Gagal mendapatkan respon AI.";
+                
+                let sourcesText = "";
+                const attributions = candidate?.groundingMetadata?.groundingAttributions;
+                if (attributions && attributions.length > 0) {
+                    sourcesText = "\n\n--- SUMBER REFERENSI GOOGLE SEARCH ---\n" + attributions.map(a => `- ${a.web?.title}: ${a.web?.uri}`).join('\n');
+                }
+
+                if (output) output.innerText = text + sourcesText;
+            })
+            .catch(err => {
+                if (spinner) spinner.classList.add('hidden');
+                if (output) output.innerText = "Error menghubungkan ke server Gemini AI: " + err.message;
+            });
+        };
+
+        window.onload = function() {
+            window.refreshCurrentView();
+        };
+    </script>
+</body>
+</html>
